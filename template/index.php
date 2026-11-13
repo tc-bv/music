@@ -345,7 +345,9 @@ if (!defined('MC_CORE')) {
             <button class="am-btn am-btn-success am-btn-sm am-btn-block" id="j-download-all-128"><i class="am-icon-download"></i> 下载列表中所有 128k</button>
             <button class="am-btn am-btn-danger am-btn-sm am-btn-block" id="j-download-all-320" style="margin-top: 5px; display:none;"><i class="am-icon-download"></i> 下载列表中所有 320k</button>
             <button class="am-btn am-btn-default am-btn-sm am-btn-block" id="j-clear-list" style="margin-top: 5px;"><i class="am-icon-trash"></i> 清空列表</button>
-            
+            <div id="j-download-progress" style="display: none; margin-top: 10px; text-align: center; color: #0e90d2; font-weight: bold; font-size: 13px;">
+                准备中...
+            </div>
             <!-- 命名格式设置 -->
             <div class="am-form-group am-form-sm" style="margin-top: 10px; margin-bottom: 5px;">
                 <label>自定义命名格式：</label>

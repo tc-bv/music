@@ -119,7 +119,39 @@ $(function() {
       fname = fname.replace(/[\\/:*?"<>|]/g, '');
       return fname || item.title;
   }
+  // === 1. 核心：支持进度回调的单曲 320k 获取 ===
+  function fetch320UrlAndDownload(item, filename, onProgress) {
+      if(!item.songid) {
+          showToast('缺少歌曲 ID，无法获取 320k 链接');
+          if(onProgress) onProgress();
+          return;
+      }
 
+      $.ajax({
+          type: 'POST',
+          url: getUrl(),
+          timeout: 10000,
+          data: { input: item.songid, filter: 'id', type: item.type || 'netease' },
+          dataType: 'json',
+          success: function(res) {
+              if (res.code === 200 && res.data && res.data.length > 0) {
+                  var freshData = res.data[0];
+                  if (freshData.url_320) {
+                      var dlUrl = getProxyDownloadUrl(freshData.url_320, filename);
+                      if(dlUrl) {
+                          var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
+                          $('body').append($iframe);
+                          setTimeout(function() { $iframe.remove(); }, 10000);
+                      }
+                  }
+              }
+              if(onProgress) onProgress();
+          },
+          error: function() {
+              if(onProgress) onProgress();
+          }
+      });
+  }
   // 生成代理下载链接
   function getProxyDownloadUrl(url, filename) {
       if(!url) return '';
@@ -205,29 +237,70 @@ $(function() {
       }
   });
 
+  // === 3. 单曲 320k 下载的点击事件（也要更新一下调用方式） ===
   $(document).on('click', '.dl-320', function() {
       var idx = $(this).data('idx');
       var item = downloadList[idx];
-      var dlUrl = getProxyDownloadUrl(item.url_320 || item.url, generateFileName(item, '320'));
-      if(dlUrl) {
-          var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
-          $('body').append($iframe);
-          setTimeout(function() { $iframe.remove(); }, 10000);
-      }
+      
+      var $progress = $('#j-download-progress');
+      $progress.show().text('正在获取单曲 320k 链接...');
+      
+      fetch320UrlAndDownload(item, generateFileName(item, '320'), function() {
+          $progress.fadeOut();
+      });
   });
 
+  // === 2. 支持进度显示的批量下载 ===
   function batchDownload(type) {
       if (downloadList.length === 0) return;
-      downloadList.forEach(function(item) {
-          var finalUrl = (type === '320' && item.url_320) ? item.url_320 : item.url;
-          var dlUrl = getProxyDownloadUrl(finalUrl, generateFileName(item, type));
-          if(dlUrl) {
-              var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
-              $('body').append($iframe);
-              setTimeout(function() { $iframe.remove(); }, 10000);
+      
+      var total = downloadList.length;
+      var current = 0;
+      var $progress = $('#j-download-progress');
+      
+      $progress.show().text('准备中...');
+      
+      // 禁用按钮防止重复点击
+      $('#j-download-all-128, #j-download-all-320').prop('disabled', true);
+
+      // 任务完成时的回调
+      var finishTask = function() {
+          current++;
+          $progress.text('已完成 ' + current + ' / ' + total + ' 个任务');
+          
+          if (current === total) {
+              setTimeout(function() {
+                  $progress.fadeOut();
+                  $('#j-download-all-128, #j-download-all-320').prop('disabled', false);
+                  showToast('批量任务已全部结束');
+              }, 1500);
           }
-      });
-      showToast('已触发批量下载！');
+      };
+
+      // 遍历列表开始任务
+      downloadList.forEach(function(item, i) {
+          setTimeout(function() {
+              // 如果是第一个，更新进度提示
+              if (current < total) {
+                  $progress.text('正在获取第 ' + (current + 1) + ' / ' + total + ' 个文件...');
+              }
+
+              var filename = generateFileName(item, type);
+
+              if (type === '320') {
+                  fetch320UrlAndDownload(item, filename, finishTask);
+              } else {
+                  // 128k 直接下载
+                  var finalUrl = item.url; 
+                  var dlUrl = getProxyDownloadUrl(finalUrl, filename);
+                  if(dlUrl) {
+                      var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
+                      $('body').append($iframe);
+                      setTimeout(function() { $iframe.remove(); }, 10000);
+                  }
+                  finishTask();
+              }
+          }, i * 1000);      });
   }
 
   $('#j-download-all-128').on('click', function() { batchDownload('128'); });
