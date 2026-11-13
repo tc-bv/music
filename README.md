@@ -2,11 +2,13 @@
 
 ## 说明
 
-多站合一音乐搜索解决方案，由[麦葱](https://github.com/maicong/music/releases)开发，彩虹后期优化和修复，[tc-bv](https://github.com/tc-bv/music)优化并重构前端 UI 与网易云双音质解析，支持搜索试听以下网站音乐：
+多站合一音乐搜索解决方案。本项目基于 [麦葱](https://github.com/maicong/music/releases) 的原版进行二次开发与维护。
 
-[网易云音乐](http://music.163.com) [QQ音乐](http://y.qq.com) [酷狗音乐](http://www.kugou.com) [酷我音乐](http://www.kuwo.cn) [虾米音乐](http://www.xiami.com) [百度音乐](http://music.baidu.com) [一听音乐](http://www.1ting.com) [咪咕音乐](http://music.migu.cn) [荔枝FM](http://www.lizhi.fm) [蜻蜓FM](http://www.qingting.fm) [喜马拉雅FM](http://www.ximalaya.com) [5sing原创](http://5sing.kugou.com/yc) [5sing翻唱](http://5sing.kugou.com/fc)
+支持搜索试听以下网站音乐：
 
-数据调用的是各网站的 API 接口，有的接口并不是开放的，随时可能失效，本项目相关代码仅供参考。
+[网易云音乐](http://music.163.com) [QQ音乐](http://y.qq.com) [酷狗音乐](http://www.kugou.com) [酷我音乐](http://www.kuwo.cn) [百度音乐](http://music.baidu.com) [一听音乐](http://www.1ting.com) [咪咕音乐](http://music.migu.cn) [荔枝FM](http://www.lizhi.fm) [蜻蜓FM](http://www.qingting.fm) [喜马拉雅FM](http://www.ximalaya.com) [5sing原创](http://5sing.kugou.com/yc) [5sing翻唱](http://5sing.kugou.com/fc)
+
+数据调用的是各网站的非官方 API 接口，随时可能失效，本项目代码仅供学习参考。
 
 ## 演示
 
@@ -14,76 +16,64 @@
 
 如果获取有误或需要改进，欢迎提交 [Issues](https://github.com/tc-bv/music/issues)
 
-## 🌟 核心特性与架构升级
+## 运行依赖
 
-### 1. 网易云双音质并发解析
+由于网易云官方旧版接口变动，网易云模块（`core/site/netease.php`）目前接入了 `NeteaseCloudMusicApi` 作为数据源。
 
-已彻底重构网易云模块。支持无 Cookie 并发解析免费歌曲的 **128k 标准音质**与 **320k 极高音质**。前端 UI 已针对网易云进行专属适配，支持双链接同时展示与下载；其他平台自动隐藏 320k 并自动将单链接拉满全宽。
-
-### 2. 必须依赖本地 API 服务
-
-由于网易云官方旧版接口彻底失效，且加密协议已多次升级，网易云模块（`core/site/netease.php`）现已接入 `NeteaseCloudMusicApi` 作为数据源。
-
-请在本地或服务器安装 [Node.js](https://nodejs.org/)，并在运行 PHP 之前，在命令行中执行以下命令启动本地 API 服务（保持窗口不关闭）：
+请在运行 PHP 服务前，安装 [Node.js](https://nodejs.org/)，并在命令行中启动本地 API 服务（保持窗口不关闭）：
 
 ```bash
 npx NeteaseCloudMusicApi@latest
 ```
 
-### 3. 前端 UI 重构
+## 功能说明
 
-- **三行完美布局**：音乐地址独占一行，128k 与 320k 完美并排，互不干扰。
-- **原生气泡提示**：全面接入 AmazeUI `data-am-popover`，鼠标悬停即显示黑底白字提示。
-- **一键复制功能**：歌曲 ID、名称、歌手等输入框后置原生 Clipboard API 复制按钮，点按即刻复制。
-- **并发极速请求**：网易云模块底层已使用 `curl_multi` 并发请求技术，彻底解决搜索等待时间过长的问题。
+### 1. 音质解析
 
-## 解决方案
+重构了网易云模块，支持并发解析免费歌曲的 128k 标准音质与 320k 极高音质。前端针对该模块进行了布局适配，支持双链接同时展示；其他平台则自动隐藏 320k 链接并自适应全宽。
+
+如需获取受版权保护的 VIP 歌曲 320k 音质，需在 `core/site/netease.php` 中填入个人的 `MUSIC_U` Cookie。
+
+### 2. 前端 UI
+
+- 调整了音乐地址与双音质链接的排列布局。
+- 接入了 AmazeUI `data-am-popover` 属性，添加了鼠标悬停提示。
+- 在歌曲 ID、名称、歌手等输入框后增加了基于 Clipboard API 的复制按钮。
+- 底部增加了下载列表管理面板，支持批量下载、实时进度显示以及自定义命名格式（支持 `{title}`、`{author}`、`{quality}`、`{random}` 等变量）。
+- 批量下载采用串行队列与动态链接获取，避免浏览器多文件拦截和接口风控。
+- 新增了 `download.php` 作为流式下载代理，处理部分外部音频链接的防盗链与时效性问题。
+
+### 3. 性能优化
+
+网易云模块底层使用了 `curl_multi` 并发请求技术，以提高数据拉取速度。
+
+## 常见问题
 
 **1. 提示数据获取失败**
 
-方案1：
-
-```
-修改 index.php 文件里的 MC_PROXY 为您的代理地址
-将 core/music.php 里需要代理的 URL 'proxy' => false 改为 'proxy' => true
-```
-
-方案2：
-
-```
-在 core/music.php 里查找 setTimeout，将其后面的数值 20 改为更大。
-在 static/js/music.js 里查找 `timeout`，将其数值 30000 改为更大。
-```
-
-方案3：
-
-```
-服务器要支持 curl。
-更换服务器，选择延迟更低的服务器。
-```
+- 修改 `index.php` 文件里的 `MC_PROXY` 为您的代理地址，并将 `core/music.php` 里需要代理的 URL `'proxy' => false` 改为 `'proxy' => true`。
+- 在 `core/music.php` 里查找 `setTimeout`，将其后面的数值 `20` 改大；在 `static/js/music.js` 里查找 `timeout`，将其数值 `30000` 改大。
+- 确保服务器支持 `curl`，或更换延迟更低的服务器。
 
 **2. 播放器显示 `Error happens ╥﹏╥`**
 
-音乐链接为空
+*音乐链接为空*
 
-```
 1. 音乐需要付费才能收听
 2. 版权限制，外站无法获取
 3. 服务器 IP 所在地不在源站允许的区域
 4. 音乐下架了，链接被去除
 5. [网易云] 本地 NeteaseCloudMusicApi 服务未启动或崩溃
-```
 
-音乐链接不为空
+*音乐链接不为空*
 
-```
 1. 当前 IP 所在地因版权限制而无法播放
 2. 音乐格式浏览器无法正常解析
-```
 
-**3. 网易云 320k 音频获取说明**
+**3. 下载功能报错或无法保存**
 
-目前项目已**默认开启**网易云 320k 解析（非 VIP 免费歌曲）。如需获取受版权保护的 VIP 歌曲 320k 音质，需在 `core/site/netease.php` 中填入您个人的 `MUSIC_U` Cookie。
+- 检查浏览器是否拦截了“多文件下载”的弹窗。
+- 确认 `download.php` 与主程序在同一目录，且 PHP 环境支持 `curl` 扩展。
 
 ## 更新日志
 
@@ -91,8 +81,8 @@ npx NeteaseCloudMusicApi@latest
 
 ## 免责声明
 
-1. 本站音频文件来自各网站接口，本站不会修改任何音频文件
-2. 音频版权来自各网站，本站只提供数据查询服务，不提供任何音频存储和贩卖服务
+1. 本站音频文件来自各网站接口，本站不会修改任何音频文件。
+2. 音频版权来自各网站，本站只提供数据查询服务，不提供任何音频存储和贩卖服务。
 3. 本项目仅供编程学习与技术交流，请勿用于商业用途，请支持正版音乐。
 
 ## 开源协议
