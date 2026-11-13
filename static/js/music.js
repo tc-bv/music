@@ -1,5 +1,7 @@
 'use strict';
 
+
+
 $(function() {
   function q(key) {
     var value = null;

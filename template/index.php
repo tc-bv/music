@@ -7,6 +7,7 @@
  * @link    https://github.com/maicong/music
  * @since   1.5.10
  *
+ *
  */
 
 if (!defined('MC_CORE')) {
