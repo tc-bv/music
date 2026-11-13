@@ -119,46 +119,99 @@ $(function() {
       fname = fname.replace(/[\\/:*?"<>|]/g, '');
       return fname || item.title;
   }
-  // === 1. 核心：支持进度回调的单曲 320k 获取 ===
-  function fetch320UrlAndDownload(item, filename, onProgress) {
-      if(!item.songid) {
-          showToast('缺少歌曲 ID，无法获取 320k 链接');
-          if(onProgress) onProgress();
-          return;
-      }
-
-      $.ajax({
-          type: 'POST',
-          url: getUrl(),
-          timeout: 10000,
-          data: { input: item.songid, filter: 'id', type: item.type || 'netease' },
-          dataType: 'json',
-          success: function(res) {
-              if (res.code === 200 && res.data && res.data.length > 0) {
-                  var freshData = res.data[0];
-                  if (freshData.url_320) {
-                      var dlUrl = getProxyDownloadUrl(freshData.url_320, filename);
-                      if(dlUrl) {
-                          var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
-                          $('body').append($iframe);
-                          setTimeout(function() { $iframe.remove(); }, 10000);
-                      }
-                  }
-              }
-              if(onProgress) onProgress();
-          },
-          error: function() {
-              if(onProgress) onProgress();
-          }
-      });
-  }
-  // 生成代理下载链接
+  // 生成代理下载链接 (保持不变)
   function getProxyDownloadUrl(url, filename) {
       if(!url) return '';
       if (url.indexOf('data:audio') === 0) return '';
       return getUrl('download.php') + '?url=' + encodeURIComponent(url) + '&filename=' + encodeURIComponent(filename + '.mp3');
   }
-  
+
+  // 【升级版】流式同步下载，支持实时进度回调
+  function downloadSynchronously(url, filename, onProgress) {
+      return new Promise(function(resolve) {
+          var proxyUrl = getProxyDownloadUrl(url, filename);
+          if(!proxyUrl) {
+              resolve();
+              return;
+          }
+
+          fetch(proxyUrl)
+              .then(function(response) {
+                  if (!response.ok) throw new Error('Network error');
+                  
+                  var total = parseInt(response.headers.get('Content-Length') || '0', 10);
+                  var loaded = 0;
+                  var chunks = [];
+                  
+                  // 【核心】获取流读取器
+                  var reader = response.body.getReader();
+
+                  function read() {
+                      return reader.read().then(function(result) {
+                          if (result.done) {
+                              return chunks; // 读取完毕，返回所有数据块
+                          }
+                          
+                          chunks.push(result.value);
+                          loaded += result.value.length;
+                          
+                          // 实时调用进度回调
+                          if (onProgress) {
+                              onProgress(loaded, total);
+                          }
+                          
+                          return read(); // 递归读取下一块
+                      });
+                  }
+
+                  return read();
+              })
+              .then(function(chunks) {
+                  // 所有数据流读完后，合并成 Blob 并触发下载
+                  var blob = new Blob(chunks, { type: 'audio/mpeg' });
+                  var blobUrl = window.URL.createObjectURL(blob);
+                  var a = document.createElement('a');
+                  a.href = blobUrl;
+                  a.download = filename + '.mp3';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  
+                  // 释放内存
+                  window.URL.revokeObjectURL(blobUrl);
+                  resolve(); 
+              })
+              .catch(function(err) {
+                  console.error('下载失败:', err);
+                  showToast('下载失败: ' + filename);
+                  resolve(); 
+              });
+      });
+  }
+  // 【新增】动态获取 320k 的 Promise 封装
+  function getFresh320Url(item) {
+      return new Promise(function(resolve, reject) {
+          if(!item.songid) {
+              reject('缺少歌曲 ID');
+              return;
+          }
+          $.ajax({
+              type: 'POST',
+              url: getUrl(),
+              timeout: 10000,
+              data: { input: item.songid, filter: 'id', type: item.type || 'netease' },
+              dataType: 'json',
+              success: function(res) {
+                  if (res.code === 200 && res.data && res.data.length > 0 && res.data[0].url_320) {
+                      resolve(res.data[0].url_320);
+                  } else {
+                      reject('暂无 320k 版权');
+                  }
+              },
+              error: function() { reject('获取 320k 失败'); }
+          });
+      });
+  }  
   $('#j-name-format').on('input change', function() {
       nameFormat = $(this).val();
       if (isPersist) {
@@ -237,20 +290,25 @@ $(function() {
       }
   });
 
-  // === 3. 单曲 320k 下载的点击事件（也要更新一下调用方式） ===
+  // 单曲 320k 下载
   $(document).on('click', '.dl-320', function() {
       var idx = $(this).data('idx');
       var item = downloadList[idx];
-      
       var $progress = $('#j-download-progress');
+      
       $progress.show().text('正在获取单曲 320k 链接...');
       
-      fetch320UrlAndDownload(item, generateFileName(item, '320'), function() {
+      getFresh320Url(item).then(function(url) {
+          $progress.text('正在下载...');
+          downloadSynchronously(url, generateFileName(item, '320')).then(function() {
+              $progress.fadeOut();
+          });
+      }).catch(function(err) {
           $progress.fadeOut();
+          showToast(err);
       });
   });
-
-  // === 2. 支持进度显示的批量下载 ===
+  // 【升级版】严格串行，带真实文件下载进度
   function batchDownload(type) {
       if (downloadList.length === 0) return;
       
@@ -259,51 +317,54 @@ $(function() {
       var $progress = $('#j-download-progress');
       
       $progress.show().text('准备中...');
-      
-      // 禁用按钮防止重复点击
       $('#j-download-all-128, #j-download-all-320').prop('disabled', true);
 
-      // 任务完成时的回调
-      var finishTask = function() {
-          current++;
-          $progress.text('已完成 ' + current + ' / ' + total + ' 个任务');
-          
-          if (current === total) {
+      function processNext() {
+          if (current >= total) {
               setTimeout(function() {
                   $progress.fadeOut();
                   $('#j-download-all-128, #j-download-all-320').prop('disabled', false);
                   showToast('批量任务已全部结束');
-              }, 1500);
+              }, 1000);
+              return;
           }
-      };
 
-      // 遍历列表开始任务
-      downloadList.forEach(function(item, i) {
-          setTimeout(function() {
-              // 如果是第一个，更新进度提示
-              if (current < total) {
-                  $progress.text('正在获取第 ' + (current + 1) + ' / ' + total + ' 个文件...');
-              }
+          var item = downloadList[current];
+          var taskPrefix = '[' + (current + 1) + '/' + total + '] ';
+          $progress.text(taskPrefix + '准备获取...');
 
-              var filename = generateFileName(item, type);
-
-              if (type === '320') {
-                  fetch320UrlAndDownload(item, filename, finishTask);
+          // 定义当前任务的进度回调
+          var progressCallback = function(loaded, totalBytes) {
+              if (totalBytes > 0) {
+                  var percent = Math.floor((loaded / totalBytes) * 100);
+                  $progress.text(taskPrefix + '下载中 ' + percent + '% (' + (loaded/1024/1024).toFixed(1) + 'MB / ' + (totalBytes/1024/1024).toFixed(1) + 'MB)');
               } else {
-                  // 128k 直接下载
-                  var finalUrl = item.url; 
-                  var dlUrl = getProxyDownloadUrl(finalUrl, filename);
-                  if(dlUrl) {
-                      var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
-                      $('body').append($iframe);
-                      setTimeout(function() { $iframe.remove(); }, 10000);
-                  }
-                  finishTask();
+                  $progress.text(taskPrefix + '已下载 ' + (loaded/1024/1024).toFixed(1) + 'MB');
               }
-          }, i * 1000);      });
-  }
+          };
 
-  $('#j-download-all-128').on('click', function() { batchDownload('128'); });
+          var downloadPromise;
+          if (type === '320') {
+              downloadPromise = getFresh320Url(item).then(function(freshUrl) {
+                  $progress.text(taskPrefix + '正在下载 320k...');
+                  return downloadSynchronously(freshUrl, generateFileName(item, '320'), progressCallback);
+              });
+          } else {
+              downloadPromise = downloadSynchronously(item.url, generateFileName(item, '128'), progressCallback);
+          }
+
+          downloadPromise.then(function() {
+              current++;
+              processNext(); 
+          }).catch(function(err) {
+              console.error(err);
+              current++;
+              processNext(); 
+          });
+      }
+
+      processNext();
+  }  $('#j-download-all-128').on('click', function() { batchDownload('128'); });
   $('#j-download-all-320').on('click', function() { batchDownload('320'); });
 
   // 无弹窗、连点两次确认的清空逻辑
