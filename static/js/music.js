@@ -276,36 +276,69 @@ $(function() {
                 });
                 
                 var setValue = function setValue(data) {
+                  // 暴力挪动 DOM 节点，强制 320k 在左，128k 在右
                   var $srcRow = $('#j-src').closest('.am-g');
                   var $wrapper320 = $('#j-src320-wrapper');
-                  if ($srcRow.length > 0) $srcRow.prepend($wrapper320);
+                  
+                  if ($srcRow.length > 0) {
+                      $srcRow.prepend($wrapper320);
+                  }
 
-                  $('#j-link').val(data.link); $('#j-link-btn').attr('href', data.link);
-                  $('#j-src').val(data.url); $('#j-src-btn').attr('href', data.url);
+                  $('#j-link').val(data.link);
+                  $('#j-link-btn').attr('href', data.link);
+                  $('#j-src').val(data.url);
+                  $('#j-src320').val(data.url_320 || '');
 
                   var $wrapper128 = $('#j-src').closest('.am-u-lg-6, .am-u-lg-12');
 
                   if (data.type === 'netease' && data.url_320) {
                     $wrapper320.show().removeClass('am-u-lg-12').addClass('am-u-lg-6');
                     $wrapper128.removeClass('am-u-lg-12').addClass('am-u-lg-6');
-                    $('#j-src320').val(data.url_320); $('#j-src320-btn').attr('href', data.url_320);
                   } else {
-                    $wrapper320.hide(); $wrapper128.removeClass('am-u-lg-6').addClass('am-u-lg-12');
+                    $wrapper320.hide(); 
+                    $wrapper128.removeClass('am-u-lg-6').addClass('am-u-lg-12');
                   }
 
                   $('#j-lrc').val(data.lrc);
                   $('#j-lrc-btn').attr('href', 'data:application/octet-stream;base64,' + btoa(unescape(encodeURIComponent(data.lrc))));
                   $('#j-lrc-btn-icon').attr('class', 'am-icon-download');
-                  $('#j-songid').val(data.songid); $('#j-name').val(data.title); $('#j-author').val(data.author);
+                  
+                  $('#j-songid').val(data.songid); 
+                  $('#j-name').val(data.title); 
+                  $('#j-author').val(data.author);
 
-                  if ('download' in $('#j-src-btn')[0]) {
-                    var name = data.title + '-' + data.author;
-                    $('#j-src-btn').attr('download', name + '.mp3');
-                    $('#j-lrc-btn').attr('download', name + '.lrc');
-                    if ($('#j-src320-btn').length) $('#j-src320-btn').attr('download', name + '_320k.mp3');
+                  // === 核心修改：将主页的下载按钮全部劫持为本地代理流式下载 ===
+                  var dlName128 = generateFileName(data, '128');
+                  var dlName320 = generateFileName(data, '320');
+
+                  // 劫持 128k 下载按钮
+                  $('#j-src-btn').attr('href', data.url).attr('download', dlName128 + '.mp3');
+                  $('#j-src-btn').off('click').on('click', function(e) {
+                      e.preventDefault();
+                      if(!data.url) {
+                          showToast('暂无 128k 链接');
+                          return;
+                      }
+                      triggerDownload(data.url, dlName128);
+                  });
+
+                  // 劫持 320k 下载按钮
+                  if ($('#j-src320-btn').length) {
+                      $('#j-src320-btn').attr('href', data.url_320 || '').attr('download', dlName320 + '.mp3');
+                      $('#j-src320-btn').off('click').on('click', function(e) {
+                          e.preventDefault();
+                          if(!data.url_320) {
+                              showToast('暂无 320k 链接');
+                              return;
+                          }
+                          triggerDownload(data.url_320, dlName320);
+                      });
                   }
-                };
 
+                  // 歌词下载保持原样
+                  $('#j-lrc-btn').attr('download', data.title + '-' + data.author + '.lrc');
+                  // =========================================================
+                };
                 if (page === 1) {
                   if (player) player.pause();
                   playerList = result.data;
@@ -316,7 +349,7 @@ $(function() {
 
                   player = new APlayer({
                     element: $('#j-player')[0],
-                    autoplay: false,
+                    autoplay: true,
                     narrow: false,
                     showlrc: 1,
                     mutex: false,

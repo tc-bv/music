@@ -12,7 +12,7 @@
 // 定义核心
 define('MC_CORE', true);
 // 定义版本
-define('MC_VERSION', '1.8.1');
+define('MC_VERSION', '1.8.2');
 
 // 核心文件目录
 define('MC_CORE_DIR', __DIR__ . '/core');
