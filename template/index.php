@@ -7,7 +7,6 @@
  * @link    https://github.com/maicong/music
  * @since   1.5.10
  *
- *
  */
 
 if (!defined('MC_CORE')) {
@@ -351,6 +350,14 @@ if (!defined('MC_CORE')) {
             <div class="am-form-group am-form-sm" style="margin-top: 10px; margin-bottom: 5px;">
                 <label>自定义命名格式：</label>
                 <input type="text" id="j-name-format" class="am-form-field" value="{title}" placeholder="可用变量: {title}, {author}, {songid}, {quality}, {random}">
+            </div>
+
+            <!-- 新增：持久化存储开关 -->
+            <div style="margin-bottom: 10px;">
+                <label style="cursor: pointer; font-size: 13px; font-weight: normal;">
+                    <input type="checkbox" id="j-persist-toggle" style="vertical-align: middle; margin-right: 5px;"> 
+                    持久化存储下载列表（刷新不丢失）
+                </label>
             </div>
 
             <!-- 帮助折叠面板 -->

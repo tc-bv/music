@@ -1,7 +1,5 @@
 'use strict';
 
-
-
 $(function() {
   function q(key) {
     var value = null;
@@ -41,10 +39,29 @@ $(function() {
   var siteTitle = document.title;
 
   // ================== 下载列表管理核心逻辑 ==================
+  
+  // 检查持久化开关状态
+  var isPersist = localStorage.getItem('mc_persist_list') === 'true';
+  $('#j-persist-toggle').prop('checked', isPersist);
+
   var downloadList = [];
+  if (isPersist) {
+      downloadList = JSON.parse(localStorage.getItem('mc_download_list') || '[]');
+  }
+
   var nameFormat = '{title}';
+  if (isPersist) {
+      nameFormat = localStorage.getItem('mc_name_format') || '{title}';
+  }
+  $('#j-name-format').val(nameFormat);
 
   updateDownloadUI();
+
+  function saveListToLocal() {
+      if (isPersist) {
+          localStorage.setItem('mc_download_list', JSON.stringify(downloadList));
+      }
+  }
 
   function updateDownloadUI() {
       var count = downloadList.length;
@@ -91,7 +108,6 @@ $(function() {
       var qualityStr = quality || '128';
       var randomNum = Math.floor(Math.random() * 2147483647);
       
-      // 强行从 DOM 里拿一次最新的值，防止 change 事件没触发
       var currentFormat = $('#j-name-format').val() || nameFormat;
 
       var fname = currentFormat.replace(/{title}/g, item.title)
@@ -104,22 +120,34 @@ $(function() {
       return fname || item.title;
   }
 
-  function triggerDownload(url, filename) {
-      if(!url) {
-          showToast('暂无此音质链接');
-          return;
-      }
-      if (url.indexOf('data:audio') === 0) return;
-
-      var proxyUrl = getUrl('download.php') + '?url=' + encodeURIComponent(url) + '&filename=' + encodeURIComponent(filename + '.mp3');
-      
-      var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', proxyUrl);
-      $('body').append($iframe);
-      setTimeout(function() { $iframe.remove(); }, 10000);
+  // 生成代理下载链接
+  function getProxyDownloadUrl(url, filename) {
+      if(!url) return '';
+      if (url.indexOf('data:audio') === 0) return '';
+      return getUrl('download.php') + '?url=' + encodeURIComponent(url) + '&filename=' + encodeURIComponent(filename + '.mp3');
   }
   
   $('#j-name-format').on('input change', function() {
       nameFormat = $(this).val();
+      if (isPersist) {
+          localStorage.setItem('mc_name_format', nameFormat);
+      }
+  });
+
+  // 持久化开关事件
+  $('#j-persist-toggle').on('change', function() {
+      isPersist = $(this).prop('checked');
+      localStorage.setItem('mc_persist_list', isPersist);
+      
+      if (isPersist) {
+          localStorage.setItem('mc_download_list', JSON.stringify(downloadList));
+          localStorage.setItem('mc_name_format', nameFormat);
+          showToast('已开启持久化存储，刷新不丢失');
+      } else {
+          localStorage.removeItem('mc_download_list');
+          localStorage.removeItem('mc_name_format');
+          showToast('已关闭持久化存储，刷新将清空');
+      }
   });
 
   $('#j-fab').on('click', function() {
@@ -155,6 +183,7 @@ $(function() {
       });
       
       updateDownloadUI();
+      saveListToLocal();
       showToast('已加入下载列表！');
   });
 
@@ -162,24 +191,41 @@ $(function() {
       var idx = $(this).data('idx');
       downloadList.splice(idx, 1);
       updateDownloadUI();
+      saveListToLocal();
   });
 
   $(document).on('click', '.dl-128', function() {
       var idx = $(this).data('idx');
       var item = downloadList[idx];
-      triggerDownload(item.url, generateFileName(item, '128'));
+      var dlUrl = getProxyDownloadUrl(item.url, generateFileName(item, '128'));
+      if(dlUrl) {
+          var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
+          $('body').append($iframe);
+          setTimeout(function() { $iframe.remove(); }, 10000);
+      }
   });
+
   $(document).on('click', '.dl-320', function() {
       var idx = $(this).data('idx');
       var item = downloadList[idx];
-      triggerDownload(item.url_320 || item.url, generateFileName(item, '320'));
+      var dlUrl = getProxyDownloadUrl(item.url_320 || item.url, generateFileName(item, '320'));
+      if(dlUrl) {
+          var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
+          $('body').append($iframe);
+          setTimeout(function() { $iframe.remove(); }, 10000);
+      }
   });
 
   function batchDownload(type) {
       if (downloadList.length === 0) return;
       downloadList.forEach(function(item) {
           var finalUrl = (type === '320' && item.url_320) ? item.url_320 : item.url;
-          triggerDownload(finalUrl, generateFileName(item, type));
+          var dlUrl = getProxyDownloadUrl(finalUrl, generateFileName(item, type));
+          if(dlUrl) {
+              var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
+              $('body').append($iframe);
+              setTimeout(function() { $iframe.remove(); }, 10000);
+          }
       });
       showToast('已触发批量下载！');
   }
@@ -187,11 +233,32 @@ $(function() {
   $('#j-download-all-128').on('click', function() { batchDownload('128'); });
   $('#j-download-all-320').on('click', function() { batchDownload('320'); });
 
+  // 无弹窗、连点两次确认的清空逻辑
+  var clearPending = false;
+  var clearTimer = null;
+  
   $('#j-clear-list').on('click', function() {
-      if(confirm('确定清空所有下载任务吗？')) {
+      if (!clearPending) {
+          // 第一次点击
+          clearPending = true;
+          showToast('再次点击确认清空列表');
+          $(this).text('确定清空？').removeClass('am-btn-default').addClass('am-btn-danger');
+          
+          clearTimer = setTimeout(function() {
+              // 3秒没点，恢复原状
+              clearPending = false;
+              $('#j-clear-list').html('<i class="am-icon-trash"></i> 清空列表').removeClass('am-btn-danger').addClass('am-btn-default');
+          }, 3000);
+      } else {
+          // 第二次点击，执行清空
+          clearTimeout(clearTimer);
+          clearPending = false;
           downloadList = [];
           updateDownloadUI();
+          saveListToLocal();
           showToast('列表已清空');
+          
+          $(this).html('<i class="am-icon-trash"></i> 清空列表').removeClass('am-btn-danger').addClass('am-btn-default');
       }
   });
   // =========================================================
@@ -278,7 +345,6 @@ $(function() {
                 });
                 
                 var setValue = function setValue(data) {
-                  // 暴力挪动 DOM 节点，强制 320k 在左，128k 在右
                   var $srcRow = $('#j-src').closest('.am-g');
                   var $wrapper320 = $('#j-src320-wrapper');
                   
@@ -309,38 +375,20 @@ $(function() {
                   $('#j-name').val(data.title); 
                   $('#j-author').val(data.author);
 
-                  // === 核心修改：将主页的下载按钮全部劫持为本地代理流式下载 ===
+                  // 核心修复：不再劫持 click，而是把真正的 download.php 代理链接直接赋给 href
+                  // 浏览器原生的 <a download> 会自己去触发下载，绝不干扰 APlayer 的事件
                   var dlName128 = generateFileName(data, '128');
                   var dlName320 = generateFileName(data, '320');
 
-                  // 劫持 128k 下载按钮
-                  $('#j-src-btn').attr('href', data.url).attr('download', dlName128 + '.mp3');
-                  $('#j-src-btn').off('click').on('click', function(e) {
-                      e.preventDefault();
-                      if(!data.url) {
-                          showToast('暂无 128k 链接');
-                          return;
-                      }
-                      triggerDownload(data.url, dlName128);
-                  });
-
-                  // 劫持 320k 下载按钮
+                  $('#j-src-btn').attr('href', getProxyDownloadUrl(data.url, dlName128)).attr('download', dlName128 + '.mp3');
+                  
                   if ($('#j-src320-btn').length) {
-                      $('#j-src320-btn').attr('href', data.url_320 || '').attr('download', dlName320 + '.mp3');
-                      $('#j-src320-btn').off('click').on('click', function(e) {
-                          e.preventDefault();
-                          if(!data.url_320) {
-                              showToast('暂无 320k 链接');
-                              return;
-                          }
-                          triggerDownload(data.url_320, dlName320);
-                      });
+                      $('#j-src320-btn').attr('href', getProxyDownloadUrl(data.url_320, dlName320)).attr('download', dlName320 + '.mp3');
                   }
 
-                  // 歌词下载保持原样
                   $('#j-lrc-btn').attr('download', data.title + '-' + data.author + '.lrc');
-                  // =========================================================
                 };
+
                 if (page === 1) {
                   if (player) player.pause();
                   playerList = result.data;
