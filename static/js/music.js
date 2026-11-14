@@ -40,7 +40,6 @@ $(function() {
 
   // ================== 下载列表管理核心逻辑 ==================
   
-  // 检查持久化开关状态
   var isPersist = localStorage.getItem('mc_persist_list') === 'true';
   $('#j-persist-toggle').prop('checked', isPersist);
 
@@ -119,82 +118,67 @@ $(function() {
       fname = fname.replace(/[\\/:*?"<>|]/g, '');
       return fname || item.title;
   }
-  // 生成代理下载链接 (保持不变)
+
   function getProxyDownloadUrl(url, filename) {
       if(!url) return '';
       if (url.indexOf('data:audio') === 0) return '';
       return getUrl('download.php') + '?url=' + encodeURIComponent(url) + '&filename=' + encodeURIComponent(filename + '.mp3');
   }
 
-  // 【升级版】流式同步下载，支持实时进度回调
-  function downloadSynchronously(url, filename, onProgress) {
-      return new Promise(function(resolve) {
-          var proxyUrl = getProxyDownloadUrl(url, filename);
-          if(!proxyUrl) {
-              resolve();
-              return;
+  // ================== 单曲下载核心 (带进度条) ==================
+  function downloadWithProgress(url, filename, progressBarId, btnId) {
+      var proxyUrl = getProxyDownloadUrl(url, filename);
+      var $progressBar = $(progressBarId);
+      var $btn = $(btnId);
+
+      $btn.prop('disabled', true).find('i').attr('class', 'am-icon-spinner am-icon-spin');
+      $progressBar.val(0).show();
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', proxyUrl, true);
+      xhr.responseType = 'blob';
+
+      xhr.onprogress = function(e) {
+          if (e.lengthComputable) {
+              var percentComplete = (e.loaded / e.total) * 100;
+              $progressBar.val(percentComplete);
           }
+      };
 
-          fetch(proxyUrl)
-              .then(function(response) {
-                  if (!response.ok) throw new Error('Network error');
-                  
-                  var total = parseInt(response.headers.get('Content-Length') || '0', 10);
-                  var loaded = 0;
-                  var chunks = [];
-                  
-                  // 【核心】获取流读取器
-                  var reader = response.body.getReader();
+      xhr.onload = function() {
+          if (this.status === 200) {
+              $progressBar.val(100);
+              var blob = this.response;
+              var blobUrl = window.URL.createObjectURL(blob);
+              var a = document.createElement('a');
+              a.href = blobUrl;
+              a.download = filename + '.mp3';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(blobUrl);
+          } else {
+              showToast('下载失败');
+          }
+          setTimeout(function() {
+              $progressBar.fadeOut();
+              $btn.prop('disabled', false).find('i').attr('class', 'am-icon-download');
+          }, 1000);
+      };
 
-                  function read() {
-                      return reader.read().then(function(result) {
-                          if (result.done) {
-                              return chunks; // 读取完毕，返回所有数据块
-                          }
-                          
-                          chunks.push(result.value);
-                          loaded += result.value.length;
-                          
-                          // 实时调用进度回调
-                          if (onProgress) {
-                              onProgress(loaded, total);
-                          }
-                          
-                          return read(); // 递归读取下一块
-                      });
-                  }
+      xhr.onerror = function() {
+          showToast('网络错误');
+          $progressBar.hide();
+          $btn.prop('disabled', false).find('i').attr('class', 'am-icon-download');
+      };
 
-                  return read();
-              })
-              .then(function(chunks) {
-                  // 所有数据流读完后，合并成 Blob 并触发下载
-                  var blob = new Blob(chunks, { type: 'audio/mpeg' });
-                  var blobUrl = window.URL.createObjectURL(blob);
-                  var a = document.createElement('a');
-                  a.href = blobUrl;
-                  a.download = filename + '.mp3';
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  
-                  // 释放内存
-                  window.URL.revokeObjectURL(blobUrl);
-                  resolve(); 
-              })
-              .catch(function(err) {
-                  console.error('下载失败:', err);
-                  showToast('下载失败: ' + filename);
-                  resolve(); 
-              });
-      });
+      xhr.send();
   }
-  // 【新增】动态获取 320k 的 Promise 封装
+
+  // ================== 动态获取 320k 链接 (必须提前定义) ==================
   function getFresh320Url(item) {
       return new Promise(function(resolve, reject) {
-          if(!item.songid) {
-              reject('缺少歌曲 ID');
-              return;
-          }
+          if(!item.songid) return reject('缺少歌曲 ID');
           $.ajax({
               type: 'POST',
               url: getUrl(),
@@ -211,7 +195,224 @@ $(function() {
               error: function() { reject('获取 320k 失败'); }
           });
       });
-  }  
+  }
+
+  // ================== Mediabunny 转码核心逻辑 ==================
+
+  function fetchBlobWithProgress(url, onProgress) {
+      return new Promise(function(resolve, reject) {
+          var proxyUrl = getProxyDownloadUrl(url, 'temp');
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', proxyUrl, true);
+          xhr.responseType = 'blob';
+
+          xhr.onprogress = function(e) {
+              if (e.lengthComputable && onProgress) {
+                  onProgress(e.loaded, e.total);
+              }
+          };
+
+          xhr.onload = function() {
+              if (this.status === 200) resolve(this.response);
+              else reject(new Error('拉取失败: ' + this.status));
+          };
+
+          xhr.onerror = function() { reject(new Error('网络错误')); };
+          xhr.send();
+      });
+  }
+
+  async function transcodeAudio(sourceUrl, outputFilename, sampleRate, bitrateKbps, callbacks) {
+      var onPullProgress = callbacks && callbacks.onPullProgress;
+      var onTranscodeProgress = callbacks && callbacks.onTranscodeProgress;
+
+      if (onPullProgress) onPullProgress(0, 0, '准备拉取源文件...');
+      
+      var sourceBlob;
+      try {
+          sourceBlob = await fetchBlobWithProgress(sourceUrl, function(loaded, total) {
+              if (onPullProgress) {
+                  var percent = Math.floor((loaded / total) * 100);
+                  onPullProgress(percent, loaded, '拉取中 ' + percent + '%');
+              }
+          });
+      } catch (e) {
+          throw new Error('拉取源文件失败: ' + e.message);
+      }
+
+      if (onPullProgress) onPullProgress(100, 0, '拉取完成，准备转码...');
+      if (onTranscodeProgress) onTranscodeProgress(0, '初始化转码器...');
+      
+      if (!window.Mediabunny) {
+          throw new Error('Mediabunny 未加载');
+      }
+
+      const { Input, Output, Conversion, ALL_FORMATS, BlobSource, OggOutputFormat, BufferTarget } = window.Mediabunny;
+
+      const input = new Input({
+          source: new BlobSource(sourceBlob),
+          formats: ALL_FORMATS,
+      });
+
+      const output = new Output({
+          format: new OggOutputFormat(),
+          target: new BufferTarget(),
+      });
+
+      var audioConfig = {
+          codec: 'opus',
+          sampleRate: sampleRate,
+          numberOfChannels: 1, 
+      };
+
+      if (bitrateKbps > 0) {
+          audioConfig.bitrate = bitrateKbps * 1000;
+          audioConfig.bitrateMode = 'constant';
+      } else {
+          audioConfig.bitrateMode = 'variable';
+      }
+
+      const conversion = await Conversion.init({
+          input,
+          output,
+          audio: audioConfig,
+      });
+
+      if (!conversion.isValid) {
+          throw new Error('浏览器不支持 Opus 编码或参数不合法');
+      }
+
+      conversion.onProgress = function(progress) {
+          if (onTranscodeProgress) {
+              onTranscodeProgress(Math.floor(progress * 100), '转码中 ' + (progress * 100).toFixed(1) + '%');
+          }
+      };
+
+      await conversion.execute();
+
+      if (onTranscodeProgress) onTranscodeProgress(100, '转码完成，正在保存...');
+
+      const finalBuffer = output.target.buffer;
+      const finalBlob = new Blob([finalBuffer], { type: 'audio/ogg' });
+      const blobUrl = window.URL.createObjectURL(finalBlob);
+      
+      var a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = outputFilename + '.ogg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+  }
+
+  // ================== 列表单曲下载事件 ==================
+  
+  // 128k 下载
+  $(document).on('click', '.dl-128', function() {
+      var idx = $(this).data('idx');
+      var item = downloadList[idx];
+      var $progress = $('#j-download-progress');
+      var filename = generateFileName(item, '128');
+      var proxyUrl = getProxyDownloadUrl(item.url, filename);
+      
+      if(!proxyUrl) return showToast('暂无 128k 链接');
+
+      $progress.show().text('正在下载: ' + item.title);
+      
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', proxyUrl, true);
+      xhr.responseType = 'blob';
+
+      xhr.onprogress = function(e) {
+          if (e.lengthComputable) {
+              var percent = Math.floor((e.loaded / e.total) * 100);
+              $progress.text('下载中 ' + percent + '% (' + (e.loaded/1024/1024).toFixed(1) + 'MB / ' + (e.total/1024/1024).toFixed(1) + 'MB)');
+          }
+      };
+
+      xhr.onload = function() {
+          if (this.status === 200) {
+              $progress.text('下载完成，保存中...');
+              var blob = this.response;
+              var blobUrl = window.URL.createObjectURL(blob);
+              var a = document.createElement('a');
+              a.href = blobUrl;
+              a.download = filename + '.mp3';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(blobUrl);
+          } else {
+              showToast('下载失败');
+          }
+          setTimeout(function() { $progress.fadeOut(); }, 1500);
+      };
+
+      xhr.onerror = function() {
+          showToast('网络错误');
+          $progress.fadeOut();
+      };
+
+      xhr.send();
+  });
+
+  // 320k 下载
+  $(document).on('click', '.dl-320', function() {
+      var idx = $(this).data('idx');
+      var item = downloadList[idx];
+      var $progress = $('#j-download-progress');
+      
+      $progress.show().text('正在获取单曲 320k 链接...');
+      
+      getFresh320Url(item).then(function(url) {
+          $progress.text('正在下载: ' + item.title);
+          var filename = generateFileName(item, '320');
+          var proxyUrl = getProxyDownloadUrl(url, filename);
+
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', proxyUrl, true);
+          xhr.responseType = 'blob';
+
+          xhr.onprogress = function(e) {
+              if (e.lengthComputable) {
+                  var percent = Math.floor((e.loaded / e.total) * 100);
+                  $progress.text('下载中 ' + percent + '% (' + (e.loaded/1024/1024).toFixed(1) + 'MB / ' + (e.total/1024/1024).toFixed(1) + 'MB)');
+              }
+          };
+
+          xhr.onload = function() {
+              if (this.status === 200) {
+                  $progress.text('下载完成，保存中...');
+                  var blob = this.response;
+                  var blobUrl = window.URL.createObjectURL(blob);
+                  var a = document.createElement('a');
+                  a.href = blobUrl;
+                  a.download = filename + '.mp3';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  window.URL.revokeObjectURL(blobUrl);
+              } else {
+                  showToast('下载失败');
+              }
+              setTimeout(function() { $progress.fadeOut(); }, 1500);
+          };
+
+          xhr.onerror = function() {
+              showToast('网络错误');
+              $progress.fadeOut();
+          };
+
+          xhr.send();
+
+      }).catch(function(err) {
+          $progress.fadeOut();
+          showToast(err);
+      });
+  });
+
+  // ================== 事件绑定 ==================
+
   $('#j-name-format').on('input change', function() {
       nameFormat = $(this).val();
       if (isPersist) {
@@ -219,7 +420,6 @@ $(function() {
       }
   });
 
-  // 持久化开关事件
   $('#j-persist-toggle').on('change', function() {
       isPersist = $(this).prop('checked');
       localStorage.setItem('mc_persist_list', isPersist);
@@ -235,14 +435,30 @@ $(function() {
       }
   });
 
-  $('#j-fab').on('click', function() {
+  // === 弹窗开关控制 ===
+  function openDownloadPanel() {
+      $('#j-modal-overlay').addClass('show');
       $('#j-download-panel').addClass('show');
+  }
+
+  function closeDownloadPanel() {
+      $('#j-modal-overlay').removeClass('show');
+      $('#j-download-panel').removeClass('show');
+  }
+
+  // 点击悬浮球打开
+  $('#j-fab').on('click', function() {
+      openDownloadPanel();
   });
 
-  $('#j-panel-toggle').on('click', function() {
-      if($('#j-download-panel').hasClass('show')) {
-          $('#j-download-panel').removeClass('show');
-      }
+  // 点击关闭按钮
+  $('#j-panel-close').on('click', function() {
+      closeDownloadPanel();
+  });
+
+  // 点击遮罩层关闭
+  $('#j-modal-overlay').on('click', function() {
+      closeDownloadPanel();
   });
 
   $('#j-add-to-list').on('click', function() {
@@ -279,163 +495,228 @@ $(function() {
       saveListToLocal();
   });
 
-  $(document).on('click', '.dl-128', function() {
-      var idx = $(this).data('idx');
-      var item = downloadList[idx];
-      var dlUrl = getProxyDownloadUrl(item.url, generateFileName(item, '128'));
-      if(dlUrl) {
-          var $iframe = $('<iframe style="display:none;"></iframe>').attr('src', dlUrl);
-          $('body').append($iframe);
-          setTimeout(function() { $iframe.remove(); }, 10000);
+  // 主页单曲转码
+  $('#j-transcode-btn').on('click', function() {
+      var currentData = playerList[player.playIndex];
+      if (!currentData || !currentData.url) {
+          showToast('请先解析并播放该歌曲');
+          return;
       }
-  });
 
-  // 单曲 320k 下载
-  $(document).on('click', '.dl-320', function() {
-      var idx = $(this).data('idx');
-      var item = downloadList[idx];
-      var $progress = $('#j-download-progress');
+      var sampleRate = parseInt($('#j-transcode-sr').val(), 10) || 48000;
+      var bitrate = parseInt($('#j-transcode-br').val(), 10);
+      if (isNaN(bitrate)) bitrate = 128;
+
+      var sourceUrl = currentData.url_320 || currentData.url;
       
-      $progress.show().text('正在获取单曲 320k 链接...');
+      var qualityStr = (bitrate === 0) ? 'VBR' : bitrate;
+      var baseName = generateFileName(currentData, qualityStr);
       
-      getFresh320Url(item).then(function(url) {
-          $progress.text('正在下载...');
-          downloadSynchronously(url, generateFileName(item, '320')).then(function() {
-              $progress.fadeOut();
-          });
-      }).catch(function(err) {
-          $progress.fadeOut();
-          showToast(err);
+      var $btn = $(this);
+      var $singleProgress = $('#j-single-progress');
+      var $pullBar = $('#j-pull-bar');
+      var $pullText = $('#j-pull-text');
+      var $pullPercent = $('#j-pull-percent');
+      var $transBar = $('#j-trans-bar');
+      var $transText = $('#j-trans-text');
+      var $transPercent = $('#j-trans-percent');
+
+      $btn.prop('disabled', true);
+      
+      $singleProgress.show();
+      $pullBar.val(0);
+      $pullText.html('正在拉取源文件...');
+      $pullPercent.text('0%');
+      $transBar.val(0);
+      $transText.html('等待转码...');
+      $transPercent.text('0%');
+
+      transcodeAudio(sourceUrl, baseName, sampleRate, bitrate, {
+          onPullProgress: function(percent, loaded, text) {
+              $pullBar.val(percent);
+              $pullText.html(text);
+              $pullPercent.text(percent + '%');
+          },
+          onTranscodeProgress: function(percent, text) {
+              $transBar.val(percent);
+              $transText.html(text);
+              $transPercent.text(percent + '%');
+          }
+      })
+      .then(function() {
+          showToast('转码下载完成！');
+          setTimeout(function() {
+              $singleProgress.fadeOut();
+              $btn.prop('disabled', false);
+          }, 1500);
+      })
+      .catch(function(err) {
+          showToast('转码失败: ' + err.message);
+          $singleProgress.fadeOut();
+          $btn.prop('disabled', false);
       });
   });
-    // 带进度条的单首下载
-  function downloadWithProgress(url, filename, progressBarId, btnId) {
-      var proxyUrl = getProxyDownloadUrl(url, filename);
-      var $progressBar = $(progressBarId);
-      var $btn = $(btnId);
 
-      // UI 状态：禁用按钮，显示进度条
-      $btn.prop('disabled', true).find('i').attr('class', 'am-icon-spinner am-icon-spin');
-      $progressBar.val(0).show();
+  // ================== 批量转码与批量下载 ==================
 
-      var xhr = new XMLHttpRequest();
-      xhr.open('GET', proxyUrl, true);
-      xhr.responseType = 'blob';
-
-      // 监听进度
-      xhr.onprogress = function(e) {
-          if (e.lengthComputable) {
-              var percentComplete = (e.loaded / e.total) * 100;
-              $progressBar.val(percentComplete);
-          }
-      };
-
-      xhr.onload = function() {
-          if (this.status === 200) {
-              $progressBar.val(100);
-              var blob = this.response;
-              var blobUrl = window.URL.createObjectURL(blob);
-              var a = document.createElement('a');
-              a.href = blobUrl;
-              a.download = filename + '.mp3';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              window.URL.revokeObjectURL(blobUrl);
-          } else {
-              showToast('下载失败');
-          }
-          // 下载完恢复 UI
-          setTimeout(function() {
-              $progressBar.fadeOut();
-              $btn.prop('disabled', false).find('i').attr('class', 'am-icon-download');
-          }, 1000);
-      };
-
-      xhr.onerror = function() {
-          showToast('网络错误');
-          $progressBar.hide();
-          $btn.prop('disabled', false).find('i').attr('class', 'am-icon-download');
-      };
-
-      xhr.send();
-  }
-  function batchDownload(type) {
+  // 批量转码
+  $('#j-transcode-all').on('click', function() {
       if (downloadList.length === 0) return;
-      
+
+      var sampleRate = parseInt($('#j-global-sr').val(), 10) || 48000;
+      var bitrate = parseInt($('#j-global-br').val(), 10);
+      if (isNaN(bitrate)) bitrate = 128;
+
       var total = downloadList.length;
       var current = 0;
       var $progress = $('#j-download-progress');
-      
+      var $btn = $(this);
+
+      $btn.prop('disabled', true).text('转码队列执行中...');
       $progress.show().text('准备中...');
-      $('#j-download-all-128, #j-download-all-320').prop('disabled', true);
 
       function processNext() {
           if (current >= total) {
-              setTimeout(function() {
-                  $progress.fadeOut();
-                  $('#j-download-all-128, #j-download-all-320').prop('disabled', false);
-                  showToast('批量任务已全部结束');
-              }, 1000);
+              $progress.text('全部转码完成！');
+              setTimeout(function() { $progress.fadeOut(); }, 2000);
+              $btn.prop('disabled', false).html('<i class="am-icon-cogs"></i> 批量转码为 Ogg');
               return;
           }
 
           var item = downloadList[current];
-          var taskPrefix = '[' + (current + 1) + '/' + total + '] ';
-          $progress.text(taskPrefix + '准备获取...');
+          var sourceUrl = item.url_320 || item.url;
+          
+          var qualityStr = (bitrate === 0) ? 'VBR' : bitrate;
+          var filename = generateFileName(item, qualityStr);
 
-          // 定义当前任务的进度回调
-          var progressCallback = function(loaded, totalBytes) {
-              if (totalBytes > 0) {
-                  var percent = Math.floor((loaded / totalBytes) * 100);
-                  $progress.text(taskPrefix + '下载中 ' + percent + '% (' + (loaded/1024/1024).toFixed(1) + 'MB / ' + (totalBytes/1024/1024).toFixed(1) + 'MB)');
-              } else {
-                  $progress.text(taskPrefix + '已下载 ' + (loaded/1024/1024).toFixed(1) + 'MB');
+          $progress.text('[' + (current + 1) + '/' + total + '] 准备处理: ' + item.title);
+
+          transcodeAudio(sourceUrl, filename, sampleRate, bitrate, {
+              onPullProgress: function(percent, loaded, text) {
+                  $progress.text('[' + (current + 1) + '/' + total + '] ' + text);
+              },
+              onTranscodeProgress: function(percent, text) {
+                  $progress.text('[' + (current + 1) + '/' + total + '] ' + text);
               }
-          };
-
-          var downloadPromise;
-          if (type === '320') {
-              downloadPromise = getFresh320Url(item).then(function(freshUrl) {
-                  $progress.text(taskPrefix + '正在下载 320k...');
-                  return downloadSynchronously(freshUrl, generateFileName(item, '320'), progressCallback);
-              });
-          } else {
-              downloadPromise = downloadSynchronously(item.url, generateFileName(item, '128'), progressCallback);
-          }
-
-          downloadPromise.then(function() {
+          })
+          .then(function() {
               current++;
-              processNext(); 
-          }).catch(function(err) {
-              console.error(err);
+              processNext();
+          })
+          .catch(function(err) {
+              console.error('批量转码失败: ', item.title, err);
               current++;
-              processNext(); 
+              processNext();
           });
       }
 
       processNext();
-  }  $('#j-download-all-128').on('click', function() { batchDownload('128'); });
+  });
+  
+  function batchDownload(type) {
+      if (downloadList.length === 0) return;
+
+      var total = downloadList.length;
+      var current = 0;
+      var $progress = $('#j-download-progress');
+      var $btn128 = $('#j-download-all-128');
+      var $btn320 = $('#j-download-all-320');
+
+      $btn128.prop('disabled', true);
+      $btn320.prop('disabled', true);
+      $progress.show().text('准备批量下载 ' + type + 'k...');
+
+      function processNext() {
+          if (current >= total) {
+              $progress.text('批量下载已全部完成！');
+              setTimeout(function() { $progress.fadeOut(); }, 2000);
+              $btn128.prop('disabled', false);
+              $btn320.prop('disabled', false);
+              return;
+          }
+
+          var item = downloadList[current];
+          var baseName = generateFileName(item, type);
+          
+          $progress.text('[' + (current + 1) + '/' + total + '] 正在下载: ' + item.title);
+
+          function downloadPromise(url) {
+              return new Promise(function(resolve) {
+                  var proxyUrl = getProxyDownloadUrl(url, baseName);
+                  var xhr = new XMLHttpRequest();
+                  xhr.open('GET', proxyUrl, true);
+                  xhr.responseType = 'blob';
+
+                  // 【新增】：绑定实时下载进度
+                  xhr.onprogress = function(e) {
+                      if (e.lengthComputable) {
+                          var mb = (e.loaded / 1024 / 1024).toFixed(1);
+                          var totalMb = (e.total / 1024 / 1024).toFixed(1);
+                          var percent = Math.floor((e.loaded / e.total) * 100);
+                          $progress.text('[' + (current + 1) + '/' + total + '] 下载中 ' + percent + '% (' + mb + 'MB / ' + totalMb + 'MB)');
+                      }
+                  };
+
+                  xhr.onload = function() {
+                      if (this.status === 200) {
+                          $progress.text('[' + (current + 1) + '/' + total + '] 下载完成，正在保存...');
+                          var blob = this.response;
+                          var blobUrl = window.URL.createObjectURL(blob);
+                          var a = document.createElement('a');
+                          a.href = blobUrl;
+                          a.download = baseName + '.mp3';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          window.URL.revokeObjectURL(blobUrl);
+                      }
+                      resolve();
+                  };
+                  xhr.onerror = function() { resolve(); };
+                  xhr.send();
+              });
+          }
+          if (type === '320') {
+              getFresh320Url(item).then(function(freshUrl) {
+                  return downloadPromise(freshUrl);
+              }).then(function() {
+                  current++;
+                  processNext();
+              }).catch(function(err) {
+                  console.error('获取 320k 失败: ', item.title, err);
+                  current++;
+                  processNext();
+              });
+          } else {
+              downloadPromise(item.url).then(function() {
+                  current++;
+                  processNext();
+              });
+          }
+      }
+
+      processNext();
+  }
+
+  $('#j-download-all-128').on('click', function() { batchDownload('128'); });
   $('#j-download-all-320').on('click', function() { batchDownload('320'); });
 
-  // 无弹窗、连点两次确认的清空逻辑
+  // ================== 原有下载 / 搜索逻辑 ==================
+
   var clearPending = false;
   var clearTimer = null;
   
   $('#j-clear-list').on('click', function() {
       if (!clearPending) {
-          // 第一次点击
           clearPending = true;
           showToast('再次点击确认清空列表');
           $(this).text('确定清空？').removeClass('am-btn-default').addClass('am-btn-danger');
           
           clearTimer = setTimeout(function() {
-              // 3秒没点，恢复原状
               clearPending = false;
               $('#j-clear-list').html('<i class="am-icon-trash"></i> 清空列表').removeClass('am-btn-danger').addClass('am-btn-default');
           }, 3000);
       } else {
-          // 第二次点击，执行清空
           clearTimeout(clearTimer);
           clearPending = false;
           downloadList = [];
@@ -446,7 +727,6 @@ $(function() {
           $(this).html('<i class="am-icon-trash"></i> 清空列表').removeClass('am-btn-danger').addClass('am-btn-default');
       }
   });
-  // =========================================================
 
   if ((qName || qId) && qType) {
     setTimeout(function() {

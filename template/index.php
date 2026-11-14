@@ -23,7 +23,7 @@ if (!defined('MC_CORE')) {
     <meta http-equiv="Cache-Control" content="no-transform">
     <meta http-equiv="Cache-Control" content="no-siteapp">
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-    <meta name="keywords" content="音乐搜索,音乐搜索器,音乐试听,音乐在线听,网易云音乐,QQ音乐,酷狗音乐,酷我音乐,虾米音乐,百度音乐,一听音乐,咪咕音乐,荔枝FM,蜻蜓FM,喜马拉雅FM,全民K歌,5sing原创翻唱音乐">
+    <meta name="keywords" content="音乐搜索,音乐搜索器,音乐试听,音乐在线听,网易云音乐,QQ音乐,酷狗音乐,酷我音乐,虾米音乐、百度音乐、一听音乐、咪咕音乐、荔枝FM、蜻蜓FM、喜马拉雅FM、全民K歌、5sing原创翻唱音乐">
     <meta name="description" content="麦葱特制多站合一音乐搜索解决方案，可搜索试听网易云音乐、QQ音乐、酷狗音乐、酷我音乐、虾米音乐、百度音乐、一听音乐、咪咕音乐、荔枝FM、蜻蜓FM、喜马拉雅FM、全民K歌、5sing原创翻唱音乐。">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -50,27 +50,45 @@ if (!defined('MC_CORE')) {
             font-size: 14px;
         }
 
-        /* 悬浮下载面板样式 */
+        /* 弹窗遮罩 */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 9998;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .modal-overlay.show {
+            display: block;
+            opacity: 1;
+        }
+
+        /* 居中下载面板 (75% 宽高) */
         .download-panel {
             position: fixed;
-            bottom: 0;
-            right: 20px;
-            width: 400px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            width: 75%;
+            height: 75%;
             background: #fff;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-            border-radius: 8px 8px 0 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            border-radius: 8px;
             z-index: 9999;
-            transform: translateY(100%);
-            transition: transform 0.3s ease;
-            display: flex;
+            display: none;
             flex-direction: column;
-            max-height: 600px;
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         .download-panel.show {
-            transform: translateY(0);
+            display: flex;
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
         }
         .download-panel-header {
-            padding: 10px 15px;
+            padding: 15px 20px;
             background: #0e90d2;
             color: #fff;
             border-radius: 8px 8px 0 0;
@@ -78,15 +96,20 @@ if (!defined('MC_CORE')) {
             justify-content: space-between;
             align-items: center;
             font-weight: bold;
+            font-size: 16px;
+        }
+        .download-panel-header .close-btn {
             cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
         }
         .download-panel-body {
-            padding: 15px;
+            padding: 20px;
             overflow-y: auto;
             flex: 1;
         }
         .download-panel-footer {
-            padding: 10px 15px;
+            padding: 15px 20px;
             border-top: 1px solid #eee;
             background: #fafafa;
             border-radius: 0 0 8px 8px;
@@ -97,12 +120,12 @@ if (!defined('MC_CORE')) {
             margin: 0 0 10px 0;
         }
         .download-list li {
-            padding: 8px 0;
+            padding: 10px 0;
             border-bottom: 1px dashed #eee;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 13px;
+            font-size: 14px;
         }
         .download-list li:last-child {
             border-bottom: none;
@@ -114,7 +137,7 @@ if (!defined('MC_CORE')) {
             white-space: nowrap;
         }
         .download-list li .actions a {
-            margin-left: 10px;
+            margin-left: 15px;
             color: #f37b1d;
             cursor: pointer;
         }
@@ -134,7 +157,7 @@ if (!defined('MC_CORE')) {
             align-items: center;
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
             cursor: pointer;
-            z-index: 9998;
+            z-index: 9997;
             transition: transform 0.2s;
         }
         .download-fab:hover {
@@ -167,6 +190,67 @@ if (!defined('MC_CORE')) {
         progress::-webkit-progress-value {
             background: #0e90d2;
             border-radius: 3px;
+        }
+
+        /* 一行展示的所有操作区 */
+        .action-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: nowrap;
+        }
+
+        /* 转码输入区 */
+        .transcode-inline {
+            display: flex;
+            align-items: center;
+            background: #fcfcfc;
+            padding: 5px 12px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            height: 38px;
+            box-sizing: border-box;
+        }
+        .transcode-inline span {
+            font-size: 13px;
+            color: #333;
+            white-space: nowrap;
+        }
+        .transcode-inline input {
+            height: 26px;
+            width: 65px;
+            margin: 0 5px;
+            padding: 0 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 13px;
+            text-align: center;
+        }
+
+        /* 统一按钮高度 */
+        .action-row .am-btn {
+            height: 38px;
+            line-height: 24px;
+            display: flex;
+            align-items: center;
+            margin: 0;
+            flex-shrink: 0;
+        }
+
+        details > summary {
+            list-style: none;
+            cursor: pointer;
+            display: inline-block;
+            padding: 5px 10px;
+            background: #e8f4ff;
+            color: #0e90d2;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
         }
     </style>
 </head>
@@ -267,48 +351,75 @@ if (!defined('MC_CORE')) {
                         </div>
                     </div>
 
-                    <div class="am-g">
-                        <div class="am-u-lg-6">
-                            <div class="am-input-group am-input-group-sm am-margin-bottom-sm">
-                                <span class="am-input-group-label"><i class="am-icon-list-ol am-icon-fw"></i></span>
-                                <input id="j-songid" class="am-form-field" readonly>
-                                <span class="am-input-group-btn"><button class="am-btn am-btn-default j-copy-btn" data-clipboard-target="#j-songid" title="复制"><i class="am-icon-copy"></i></button></span>
+                    <!-- 折叠的信息区 -->
+                    <details class="am-margin-bottom-sm">
+                        <summary><i class="am-icon-list"></i> 显示歌曲信息 (ID / 歌词 / 名称 / 作者)</summary>
+                        <div class="am-margin-top-sm">
+                            <div class="am-g">
+                                <div class="am-u-lg-6">
+                                    <div class="am-input-group am-input-group-sm am-margin-bottom-sm">
+                                        <span class="am-input-group-label"><i class="am-icon-list-ol am-icon-fw"></i></span>
+                                        <input id="j-songid" class="am-form-field" readonly>
+                                        <span class="am-input-group-btn"><button class="am-btn am-btn-default j-copy-btn" data-clipboard-target="#j-songid" title="复制"><i class="am-icon-copy"></i></button></span>
+                                    </div>
+                                </div>
+                                <div class="am-u-lg-6">
+                                    <div class="am-input-group am-input-group-sm am-margin-bottom-sm">
+                                        <span class="am-input-group-label"><i class="am-icon-file-text-o am-icon-fw"></i></span>
+                                        <input id="j-lrc" class="am-form-field" readonly>
+                                        <span class="am-input-group-btn">
+                                            <a id="j-lrc-btn" class="am-btn am-btn-default" target="_blank"><i id="j-lrc-btn-icon" class="am-icon-download"></i></a>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="am-g">
+                                <div class="am-u-lg-6">
+                                    <div class="am-input-group am-input-group-sm am-margin-bottom-sm">
+                                        <span class="am-input-group-label"><i class="am-icon-tag am-icon-fw"></i></span>
+                                        <input id="j-name" class="am-form-field" readonly>
+                                        <span class="am-input-group-btn"><button class="am-btn am-btn-default j-copy-btn" data-clipboard-target="#j-name" title="复制"><i class="am-icon-copy"></i></button></span>
+                                    </div>
+                                </div>
+                                <div class="am-u-lg-6">
+                                    <div class="am-input-group am-input-group-sm am-margin-bottom-sm">
+                                        <span class="am-input-group-label"><i class="am-icon-user am-icon-fw"></i></span>
+                                        <input id="j-author" class="am-form-field" readonly>
+                                        <span class="am-input-group-btn"><button class="am-btn am-btn-default j-copy-btn" data-clipboard-target="#j-author" title="复制"><i class="am-icon-copy"></i></button></span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="am-u-lg-6">
-                            <div class="am-input-group am-input-group-sm am-margin-bottom-sm">
-                                <span class="am-input-group-label"><i class="am-icon-file-text-o am-icon-fw"></i></span>
-                                <input id="j-lrc" class="am-form-field" readonly>
-                                <span class="am-input-group-btn">
-                                    <a id="j-lrc-btn" class="am-btn am-btn-default" target="_blank"><i id="j-lrc-btn-icon" class="am-icon-download"></i></a>
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="am-g">
-                        <div class="am-u-lg-6">
-                            <div class="am-input-group am-input-group-sm am-margin-bottom-sm">
-                                <span class="am-input-group-label"><i class="am-icon-tag am-icon-fw"></i></span>
-                                <input id="j-name" class="am-form-field" readonly>
-                                <span class="am-input-group-btn"><button class="am-btn am-btn-default j-copy-btn" data-clipboard-target="#j-name" title="复制"><i class="am-icon-copy"></i></button></span>
-                            </div>
-                        </div>
-                        <div class="am-u-lg-6">
-                            <div class="am-input-group am-input-group-sm am-margin-bottom-sm">
-                                <span class="am-input-group-label"><i class="am-icon-user am-icon-fw"></i></span>
-                                <input id="j-author" class="am-form-field" readonly>
-                                <span class="am-input-group-btn"><button class="am-btn am-btn-default j-copy-btn" data-clipboard-target="#j-author" title="复制"><i class="am-icon-copy"></i></button></span>
-                            </div>
-                        </div>
-                    </div>
+                    </details>
 
-                    <div class="am-margin-bottom-lg" style="text-align: right;">
+                    <!-- 底部操作区：强制一行显示 -->
+                    <div class="action-row">
+                        <div class="transcode-inline">
+                            <span>转码</span>
+                            <input type="number" id="j-transcode-sr" value="48000" step="100" placeholder="48000">
+                            <span>Hz</span>
+                            <input type="number" id="j-transcode-br" value="128" step="1" placeholder="0=VBR" style="margin-left: 10px;">
+                            <span>Kbps</span>
+                        </div>
+
+                        <button type="button" class="am-btn am-btn-primary am-btn-sm am-radius" id="j-transcode-btn">
+                            <i class="am-icon-cogs"></i> 转码并下载
+                        </button>
                         <button type="button" class="am-btn am-btn-warning am-btn-sm am-radius" id="j-add-to-list">
-                            <i class="am-icon-plus"></i> 将此歌曲添加到下载列表
+                            <i class="am-icon-plus"></i> 添加到下载列表
                         </button>
                     </div>
                     
+                    <!-- 主页专用双进度条 -->
+                    <div id="j-single-progress" style="display: none; margin-top: -10px; margin-bottom: 20px; width: 100%;">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 3px;" id="j-pull-text">正在拉取源文件... <span id="j-pull-percent">0%</span></div>
+                        <progress id="j-pull-bar" value="0" max="100" style="width: 100%; height: 6px; margin-bottom: 10px;"></progress>
+                        
+                        <div style="font-size: 12px; color: #666; margin-bottom: 3px;" id="j-trans-text">正在转码... <span id="j-trans-percent">0%</span></div>
+                        <progress id="j-trans-bar" value="0" max="100" style="width: 100%; height: 6px;"></progress>
+                    </div>
+
                     <div id="j-show" class="am-margin-vertical">
                         <div id="j-player" class="aplayer"></div>
                     </div>
@@ -351,11 +462,14 @@ if (!defined('MC_CORE')) {
         <span class="badge" id="j-fab-badge">0</span>
     </div>
 
-    <!-- 下载管理面板 -->
+    <!-- 弹窗遮罩 -->
+    <div class="modal-overlay" id="j-modal-overlay"></div>
+
+    <!-- 下载管理面板 (居中弹窗 75%宽高) -->
     <div class="download-panel" id="j-download-panel">
-        <div class="download-panel-header" id="j-panel-toggle">
+        <div class="download-panel-header">
             <span><i class="am-icon-list"></i> 下载列表管理</span>
-            <i class="am-icon-chevron-down"></i>
+            <i class="am-icon-close close-btn" id="j-panel-close"></i>
         </div>
         <div class="download-panel-body">
             <!-- 列表 -->
@@ -366,18 +480,26 @@ if (!defined('MC_CORE')) {
             <button class="am-btn am-btn-danger am-btn-sm am-btn-block" id="j-download-all-320" style="margin-top: 5px; display:none;"><i class="am-icon-download"></i> 下载列表中所有 320k</button>
             <button class="am-btn am-btn-default am-btn-sm am-btn-block" id="j-clear-list" style="margin-top: 5px;"><i class="am-icon-trash"></i> 清空列表</button>
             
-            <!-- 新增：任务进度显示区 -->
-            <div id="j-download-progress" style="display: none; margin-top: 10px; text-align: center; color: #0e90d2; font-weight: bold; font-size: 13px;">
+            <div id="j-download-progress" style="display: none; margin-top: 10px; text-align: center; color: #0e90d2; font-weight: bold; font-size: 14px; white-space: pre-wrap;">
                 准备中...
             </div>
 
-            <!-- 命名格式设置 -->
-            <div class="am-form-group am-form-sm" style="margin-top: 10px; margin-bottom: 5px;">
+            <div class="am-form-group am-form-sm" style="margin-top: 15px; margin-bottom: 5px;">
                 <label>自定义命名格式：</label>
                 <input type="text" id="j-name-format" class="am-form-field" value="{title}" placeholder="可用变量: {title}, {author}, {songid}, {quality}, {random}">
             </div>
 
-            <!-- 新增：持久化存储开关 -->
+            <div class="am-form-group am-form-sm" style="margin-bottom: 10px;">
+                <label>全局转码设置 (Opus/Ogg)：</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="number" id="j-global-sr" class="am-form-field" value="48000" step="100" placeholder="采样率" style="width: 50%;">
+                    <input type="number" id="j-global-br" class="am-form-field" value="128" step="1" placeholder="码率 (0=VBR)" style="width: 50%;">
+                </div>
+                <button class="am-btn am-btn-success am-btn-sm am-btn-block" id="j-transcode-all" style="margin-top: 8px;">
+                    <i class="am-icon-cogs"></i> 批量转码为 Ogg
+                </button>
+            </div>
+
             <div style="margin-bottom: 10px;">
                 <label style="cursor: pointer; font-size: 13px; font-weight: normal;">
                     <input type="checkbox" id="j-persist-toggle" style="vertical-align: middle; margin-right: 5px;"> 
@@ -385,22 +507,23 @@ if (!defined('MC_CORE')) {
                 </label>
             </div>
 
-            <!-- 帮助折叠面板 -->
-            <details style="margin-top: 10px; font-size: 12px; color: #888; border-top: 1px dashed #eee; padding-top: 10px;">
+            <!-- 帮助折叠面板 (加宽了行距) -->
+            <details style="margin-top: 15px; font-size: 13px; color: #888; border-top: 1px dashed #eee; padding-top: 15px; line-height: 1.8;">
                 <summary style="cursor: pointer; font-weight: bold; color: #333;">帮助与说明</summary>
-                <div style="margin-top: 8px;">
+                <div style="margin-top: 10px;">
                     <b>支持变量：</b><br>
                     {title} - 歌名<br>
                     {author} - 歌手<br>
                     {songid} - 歌曲ID<br>
-                    {quality} - 音质 (128/320)<br>
+                    {quality} - 音质 (128/320，转码时为设定的码率)<br>
                     {random} - 随机数
                 </div>
-                <div style="margin-top: 8px;">
+                <div style="margin-top: 10px;">
                     <b>注意事项：</b><br>
                     1. 修改命名格式后，在此页面直接点击下载即可生效。<br>
                     2. 如果下载没有自动保存，请检查浏览器是否拦截了“多个文件下载”的弹窗。<br>
-                    3. 默认不带音质后缀，如果需要区分请加入 <code>{quality}</code> 变量。
+                    3. 默认不带音质后缀，如果需要区分请加入 <code>{quality}</code> 变量。<br>
+                    4. 转码需浏览器支持 WebCodecs (建议使用 Chrome/Edge 最新版)。
                 </div>
             </details>
         </div>
@@ -423,6 +546,10 @@ if (!defined('MC_CORE')) {
     <script src="//lib.baomitu.com/amazeui/2.3.0/js/amazeui.min.js"></script>
     <script src="//lib.baomitu.com/aplayer/1.6.0/APlayer.min.js"></script>
     <script src="//lib.baomitu.com/Base64/1.0.1/base64.min.js"></script>
+    
+    <!-- 引入 Mediabunny -->
+    <script src="static/js/mediabunny.cjs"></script>
+    
     <script src="static/js/music.js?v<?php echo MC_VERSION; ?>"></script>
 </body>
 </html>
