@@ -151,6 +151,23 @@ if (!defined('MC_CORE')) {
             border-radius: 10px;
             display: none;
         }
+
+        /* 极简进度条原生样式优化 */
+        progress {
+            -webkit-appearance: none;
+            appearance: none;
+            border: none;
+            border-radius: 3px;
+            background: #eee;
+        }
+        progress::-webkit-progress-bar {
+            background: #eee;
+            border-radius: 3px;
+        }
+        progress::-webkit-progress-value {
+            background: #0e90d2;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
@@ -231,19 +248,22 @@ if (!defined('MC_CORE')) {
                                 <span class="am-input-group-label"><i class="am-icon-music am-icon-fw"></i></span>
                                 <input id="j-src320" class="am-form-field" readonly>
                                 <span class="am-input-group-btn">
-                                    <a id="j-src320-btn" class="am-btn am-btn-default" target="_blank"><i id="j-src320-btn-icon" class="am-icon-download"></i></a>
+                                    <a id="j-src320-btn" class="am-btn am-btn-default" href="javascript:;"><i id="j-src320-btn-icon" class="am-icon-download"></i></a>
                                 </span>
                             </div>
+                            <progress id="j-progress-320" value="0" max="100" style="width: 100%; height: 6px; display: none; margin-bottom: 10px;"></progress>
                         </div>
+                        
                         <!-- 128k 右 -->
                         <div class="am-u-lg-6">
                             <div class="am-input-group am-input-group-sm am-margin-bottom-sm" data-am-popover="{content: '音乐链接 (128k)', trigger: 'hover'}">
                                 <span class="am-input-group-label"><i class="am-icon-music am-icon-fw"></i></span>
                                 <input id="j-src" class="am-form-field" readonly>
                                 <span class="am-input-group-btn">
-                                    <a id="j-src-btn" class="am-btn am-btn-default" target="_blank"><i id="j-src-btn-icon" class="am-icon-download"></i></a>
+                                    <a id="j-src-btn" class="am-btn am-btn-default" href="javascript:;"><i id="j-src-btn-icon" class="am-icon-download"></i></a>
                                 </span>
                             </div>
+                            <progress id="j-progress-128" value="0" max="100" style="width: 100%; height: 6px; display: none; margin-bottom: 10px;"></progress>
                         </div>
                     </div>
 
@@ -345,9 +365,12 @@ if (!defined('MC_CORE')) {
             <button class="am-btn am-btn-success am-btn-sm am-btn-block" id="j-download-all-128"><i class="am-icon-download"></i> 下载列表中所有 128k</button>
             <button class="am-btn am-btn-danger am-btn-sm am-btn-block" id="j-download-all-320" style="margin-top: 5px; display:none;"><i class="am-icon-download"></i> 下载列表中所有 320k</button>
             <button class="am-btn am-btn-default am-btn-sm am-btn-block" id="j-clear-list" style="margin-top: 5px;"><i class="am-icon-trash"></i> 清空列表</button>
+            
+            <!-- 新增：任务进度显示区 -->
             <div id="j-download-progress" style="display: none; margin-top: 10px; text-align: center; color: #0e90d2; font-weight: bold; font-size: 13px;">
                 准备中...
             </div>
+
             <!-- 命名格式设置 -->
             <div class="am-form-group am-form-sm" style="margin-top: 10px; margin-bottom: 5px;">
                 <label>自定义命名格式：</label>

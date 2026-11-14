@@ -308,7 +308,58 @@ $(function() {
           showToast(err);
       });
   });
-  // 【升级版】严格串行，带真实文件下载进度
+    // 带进度条的单首下载
+  function downloadWithProgress(url, filename, progressBarId, btnId) {
+      var proxyUrl = getProxyDownloadUrl(url, filename);
+      var $progressBar = $(progressBarId);
+      var $btn = $(btnId);
+
+      // UI 状态：禁用按钮，显示进度条
+      $btn.prop('disabled', true).find('i').attr('class', 'am-icon-spinner am-icon-spin');
+      $progressBar.val(0).show();
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', proxyUrl, true);
+      xhr.responseType = 'blob';
+
+      // 监听进度
+      xhr.onprogress = function(e) {
+          if (e.lengthComputable) {
+              var percentComplete = (e.loaded / e.total) * 100;
+              $progressBar.val(percentComplete);
+          }
+      };
+
+      xhr.onload = function() {
+          if (this.status === 200) {
+              $progressBar.val(100);
+              var blob = this.response;
+              var blobUrl = window.URL.createObjectURL(blob);
+              var a = document.createElement('a');
+              a.href = blobUrl;
+              a.download = filename + '.mp3';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(blobUrl);
+          } else {
+              showToast('下载失败');
+          }
+          // 下载完恢复 UI
+          setTimeout(function() {
+              $progressBar.fadeOut();
+              $btn.prop('disabled', false).find('i').attr('class', 'am-icon-download');
+          }, 1000);
+      };
+
+      xhr.onerror = function() {
+          showToast('网络错误');
+          $progressBar.hide();
+          $btn.prop('disabled', false).find('i').attr('class', 'am-icon-download');
+      };
+
+      xhr.send();
+  }
   function batchDownload(type) {
       if (downloadList.length === 0) return;
       
@@ -509,15 +560,21 @@ $(function() {
                   $('#j-name').val(data.title); 
                   $('#j-author').val(data.author);
 
-                  // 核心修复：不再劫持 click，而是把真正的 download.php 代理链接直接赋给 href
-                  // 浏览器原生的 <a download> 会自己去触发下载，绝不干扰 APlayer 的事件
                   var dlName128 = generateFileName(data, '128');
                   var dlName320 = generateFileName(data, '320');
 
-                  $('#j-src-btn').attr('href', getProxyDownloadUrl(data.url, dlName128)).attr('download', dlName128 + '.mp3');
-                  
+                  $('#j-src-btn').off('click').on('click', function(e) {
+                      e.preventDefault();
+                      if(!data.url) return showToast('暂无 128k 链接');
+                      downloadWithProgress(data.url, dlName128, '#j-progress-128', '#j-src-btn');
+                  });
+
                   if ($('#j-src320-btn').length) {
-                      $('#j-src320-btn').attr('href', getProxyDownloadUrl(data.url_320, dlName320)).attr('download', dlName320 + '.mp3');
+                      $('#j-src320-btn').off('click').on('click', function(e) {
+                          e.preventDefault();
+                          if(!data.url_320) return showToast('暂无 320k 链接');
+                          downloadWithProgress(data.url_320, dlName320, '#j-progress-320', '#j-src320-btn');
+                      });
                   }
 
                   $('#j-lrc-btn').attr('download', data.title + '-' + data.author + '.lrc');
