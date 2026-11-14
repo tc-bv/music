@@ -91,6 +91,7 @@ function mc_get_song_by_name($query, $site = 'netease', $page = 1)
     if (!$query) {
         return;
     }
+$limit = isset($_POST['limit']) ? (int)$_POST['limit'] : 10;
     switch ($site) {
         case '1ting':
 			return \site\m1ting::search($query, $page);
@@ -117,7 +118,7 @@ function mc_get_song_by_name($query, $site = 'netease', $page = 1)
         case 'kg':
             return \site\qmkg::search($query, $page);
         case 'netease':
-            return \site\netease::search($query, $page);
+            return \site\netease::search($query, $page, $limit);
         default:
             return false;
     }

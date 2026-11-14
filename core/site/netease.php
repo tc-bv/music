@@ -7,13 +7,16 @@ class netease
     private static $apiBase = 'http://localhost:3000';
     private static $cookie = 'os=pc;';
 
-    public static function search($query, $page)
+    public static function search($query, $page, $limit = 10)
     {
         if (empty($query)) return;
-
-        $url = self::$apiBase . '/search?keywords=' . urlencode($query)
-             . '&limit=10&offset=' . ($page * 10 - 10)
-             . '&type=1';
+        
+        // 动态接收前端传来的 limit
+        $limit = (int)$limit;
+        if ($limit <= 0) $limit = 10;
+        
+        $offset = ($page - 1) * $limit;
+        $url = self::$apiBase . '/search?keywords=' . urlencode($query) . '&limit=' . $limit . '&offset=' . $offset . '&type=1';
 
         $result = self::curl_get($url);
         $data = json_decode($result, true);
