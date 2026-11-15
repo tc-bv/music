@@ -34,7 +34,7 @@ npx NeteaseCloudMusicApi@latest
 
 如需获取受版权保护的 VIP 歌曲 320k 音质，需在 `core/site/netease.php` 中填入个人的 `MUSIC_U` Cookie。
 
-支持转码/批量转码可配置的Opus格式导出。
+支持转码/批量转码可配置的多格式导出。
 
 ### 2. 前端 UI
 

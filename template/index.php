@@ -32,7 +32,7 @@ if (!defined('MC_CORE')) {
     <meta name="format-detection" content="telephone=no">
     <link rel="shortcut icon" href="favicon.ico">
     <link rel="apple-touch-icon" href="static/img/apple-touch-icon.png">
-    <link rel="stylesheet" href="//lib.baomitu.com/amazeui/2.3.0/css/amazeui.min.css">
+    <link rel="stylesheet" href="static/css/amazeui.min.css">
     <link rel="stylesheet" href="static/css/style.css?v<?php echo MC_VERSION; ?>">
     <style>
         /* 顶部 Toast 提示 */
@@ -235,6 +235,18 @@ if (!defined('MC_CORE')) {
         details > summary::-webkit-details-marker {
             display: none;
         }
+
+        /* 设置表单美化 */
+        .settings-form-group {
+            margin-bottom: 15px;
+        }
+        .settings-form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 13px;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -372,7 +384,6 @@ if (!defined('MC_CORE')) {
                         </div>
                     </details>
 
-                    <!-- 底部操作区：已精简，仅保留按钮，参数已移至设置面板 -->
                     <div class="action-row">
                         <button type="button" class="am-btn am-btn-primary am-btn-sm am-radius" id="j-transcode-btn">
                             <i class="am-icon-cogs"></i> 转码并下载
@@ -386,7 +397,7 @@ if (!defined('MC_CORE')) {
                         <div style="font-size: 12px; color: #666; margin-bottom: 3px;" id="j-pull-text">正在拉取源文件... <span id="j-pull-percent">0%</span></div>
                         <progress id="j-pull-bar" value="0" max="100" style="width: 100%; height: 6px; margin-bottom: 10px;"></progress>
                         
-                        <div style="font-size: 12px; color: #666; margin-bottom: 3px;" id="j-trans-text">正在转码... <span id="j-trans-percent">0%</span></div>
+                        <div style="font-size: 12px; color: #666; margin-bottom: 3px;" id="j-trans-text">正在处理... <span id="j-trans-percent">0%</span></div>
                         <progress id="j-trans-bar" value="0" max="100" style="width: 100%; height: 6px;"></progress>
                     </div>
 
@@ -453,9 +464,9 @@ if (!defined('MC_CORE')) {
         <div class="custom-modal-footer">
             <button class="am-btn am-btn-success am-btn-sm am-btn-block" id="j-download-all-128"><i class="am-icon-download"></i> 下载列表中所有 128k</button>
             <button class="am-btn am-btn-danger am-btn-sm am-btn-block" id="j-download-all-320" style="margin-top: 5px; display:none;"><i class="am-icon-download"></i> 下载列表中所有 320k</button>
-                <button class="am-btn am-btn-success am-btn-sm am-btn-block" id="j-transcode-all" style="margin-top: 8px;">
-                    <i class="am-icon-cogs"></i> 批量转码列表中所有
-                </button>
+            <button class="am-btn am-btn-success am-btn-sm am-btn-block" id="j-transcode-all" style="margin-top: 5px;">
+                <i class="am-icon-cogs"></i> 批量转码列表中所有
+            </button>
             <button class="am-btn am-btn-default am-btn-sm am-btn-block" id="j-clear-list" style="margin-top: 5px;"><i class="am-icon-trash"></i> 清空列表</button>
         </div>
     </div>
@@ -467,40 +478,49 @@ if (!defined('MC_CORE')) {
             <i class="am-icon-close close-btn" id="j-settings-close"></i>
         </div>
         <div class="custom-modal-body">
-            <!-- 命名格式 -->
-            <div class="am-form-group am-form-sm">
+            <div class="settings-form-group">
                 <label>自定义命名格式：</label>
                 <input type="text" id="j-name-format" class="am-form-field" value="{title}" placeholder="可用变量: {title}, {author}, {songid}, {quality}, {random}">
             </div>
 
-            <!-- 主页单曲转码 -->
-            <div class="am-form-group am-form-sm" style="margin-top: 15px;">
-                <label>主页单曲转码设置 (Opus/Ogg)：</label>
-                <div style="display: flex; gap: 10px;">
-                    <input type="number" id="j-transcode-sr" class="am-form-field" value="48000" step="100" placeholder="采样率 (Hz)" style="width: 50%;">
-                    <input type="number" id="j-transcode-br" class="am-form-field" value="128" step="1" placeholder="码率 (0=VBR)" style="width: 50%;">
+            <!-- 统一转码设置 -->
+            <div class="settings-form-group" style="margin-top: 20px; border-top: 1px dashed #eee; padding-top: 15px;">
+                <label>全局转码/导出设置：</label>
+                
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <select id="j-transcode-fmt" class="am-form-field" style="width: 40%;">
+                        <option value="opus">Opus (.ogg)</option>
+                        <option value="mp3">MP3 (.mp3)</option>
+                        <option value="wav">WAV (.wav)</option>
+                        <option value="flac">FLAC (.flac)</option>
+                    </select>
+                    <input type="number" id="j-transcode-sr" class="am-form-field" value="48000" step="100" placeholder="采样率 (Hz)" style="width: 60%;">
                 </div>
-                <select id="j-transcode-ch" class="am-form-field" style="margin-top: 8px;">
-                    <option value="1">单声道 (Mono)</option>
-                    <option value="2">立体声 (Stereo)</option>
-                </select>
-            </div>
 
-            <!-- 列表批量转码 -->
-            <div class="am-form-group am-form-sm" style="margin-top: 15px;">
-                <label>列表批量转码设置 (Opus/Ogg)：</label>
-                <div style="display: flex; gap: 10px;">
-                    <input type="number" id="j-global-sr" class="am-form-field" value="48000" step="100" placeholder="采样率" style="width: 50%;">
-                    <input type="number" id="j-global-br" class="am-form-field" value="128" step="1" placeholder="码率 (0=VBR)" style="width: 50%;">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <select id="j-transcode-ch" class="am-form-field" style="width: 50%;">
+                        <option value="1">单声道 (Mono)</option>
+                        <option value="2">立体声 (Stereo)</option>
+                    </select>
+                    
+                    <!-- 码率 (仅 Opus 显示) -->
+                    <input type="number" id="j-transcode-br" class="am-form-field" value="128" step="1" placeholder="码率(0=VBR)" style="width: 50%;">
                 </div>
-                <select id="j-global-ch" class="am-form-field" style="margin-top: 8px;">
-                    <option value="1">单声道 (Mono)</option>
-                    <option value="2">立体声 (Stereo)</option>
-                </select>
+
+                <!-- 位深 (仅 WAV/FLAC 显示) -->
+                <div id="j-format-depth-wrap" style="display: none; margin-bottom: 10px;">
+                    <select id="j-transcode-depth" class="am-form-field" style="width: 100%;">
+                        <option value="s16le">16-bit (s16le)</option>
+                        <option value="s24le">24-bit (s24le)</option>
+                        <option value="s32le">32-bit (s32le)</option>
+                        <option value="f32le">32-bit Float (f32le)</option>
+                        <option value="u8">8-bit Unsigned (u8)</option>
+                    </select>
+                </div>
             </div>
 
             <!-- 其他开关 -->
-            <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px; border-top: 1px dashed #eee; padding-top: 15px;">
                 <label style="cursor: pointer; font-size: 13px; font-weight: normal;">
                     <input type="checkbox" id="j-persist-toggle" style="vertical-align: middle; margin-right: 5px;"> 持久化存储下载列表
                 </label>
@@ -523,14 +543,14 @@ if (!defined('MC_CORE')) {
                     {title} - 歌名<br>
                     {author} - 歌手<br>
                     {songid} - 歌曲ID<br>
-                    {quality} - 音质 (128/320，转码时为设定的码率)<br>
+                    {quality} - 音质 (转码时为格式+参数)<br>
                     {random} - 随机数
                 </div>
                 <div style="margin-top: 10px;">
                     <b>注意事项：</b><br>
                     1. 修改设置后自动生效。<br>
                     2. 如果下载没有自动保存，请检查浏览器是否拦截了“多个文件下载”的弹窗。<br>
-                    3. 转码需浏览器支持 WebCodecs (建议使用 Chrome/Edge 最新版)。
+                    3. 转码需浏览器支持 WebCodecs。
                 </div>
             </details>
         </div>
@@ -549,13 +569,14 @@ if (!defined('MC_CORE')) {
         </div>
     </div>
     
-    <script src="//lib.baomitu.com/jquery/1.12.4/jquery.min.js"></script>
-    <script src="//lib.baomitu.com/amazeui/2.3.0/js/amazeui.min.js"></script>
-    <script src="//lib.baomitu.com/aplayer/1.6.0/APlayer.min.js"></script>
-    <script src="//lib.baomitu.com/Base64/1.0.1/base64.min.js"></script>
+    <script src="static/js/jquery.min.js"></script>
+    <script src="static/js/amazeui.min.js"></script>
+    <script src="static/js/APlayer.min.js"></script>
+    <script src="static/js/base64.min.js"></script>
     
     <script src="static/js/mediabunny.cjs"></script>
-    
+    <script src="static/js/mediabunny-flac-encoder.js"></script>
+    <script src="static/js/mediabunny-mp3-encoder.js"></script>
     <script src="static/js/music.js?v<?php echo MC_VERSION; ?>"></script>
 </body>
 </html>

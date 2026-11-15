@@ -24,53 +24,74 @@ $(function() {
       var $toast = $('#j-toast');
       $toast.text(msg).fadeIn(200);
       clearTimeout(window.toastTimer);
-      window.toastTimer = setTimeout(function() {
-          $toast.fadeOut(200);
-      }, 2000);
+      window.toastTimer = setTimeout(function() { $toast.fadeOut(200); }, 2000);
   }
 
-  var player = null;
-  var playerList = [];
-  var nopic = 'static/img/nopic.jpg';
-  var qName = q('name');
-  var qId = q('id');
-  var qUrl = q('url');
-  var qType = q('type');
-  var siteTitle = document.title;
-
-  // ================== 全局设置状态 ==================
+  // ================== 全局设置 ==================
   var settings = {
       isPersist: localStorage.getItem('mc_persist_list') === 'true',
       use320ForTranscode: localStorage.getItem('mc_use_320_transcode') === 'true',
       autoplay: localStorage.getItem('mc_autoplay') !== 'false',
       pageSize: parseInt(localStorage.getItem('mc_page_size')) || 10,
       nameFormat: localStorage.getItem('mc_name_format') || '{title}',
-      singleSr: localStorage.getItem('mc_single_sr') || '48000',
-      singleBr: localStorage.getItem('mc_single_br') || '128',
-      globalSr: localStorage.getItem('mc_global_sr') || '48000',
-      globalBr: localStorage.getItem('mc_global_br') || '128',
-      singleCh: localStorage.getItem('mc_single_ch') || '2',
-      globalCh: localStorage.getItem('mc_global_ch') || '2'
+      fmt: localStorage.getItem('mc_trans_fmt') || 'opus',
+      sr: localStorage.getItem('mc_trans_sr') || '48000',
+      br: localStorage.getItem('mc_trans_br') || '128',
+      ch: localStorage.getItem('mc_trans_ch') || '2',
+      depth: localStorage.getItem('mc_trans_depth') || 's16le'
   };
 
-  // 初始化 UI 状态
+  function updateFormatUI() {
+      // 修改：加入 'mp3' 判断
+      if (settings.fmt === 'opus' || settings.fmt === 'mp3') {
+          $('#j-format-depth-wrap').hide();
+          $('#j-transcode-br').prop('disabled', false).attr('placeholder', '码率 (kbps)').show();
+      } else {
+          $('#j-format-depth-wrap').show();
+          $('#j-transcode-br').prop('disabled', true).attr('placeholder', '无损无需码率').hide();
+      }
+  }
+
+  // 初始化 UI
   $('#j-persist-toggle').prop('checked', settings.isPersist);
   $('#j-use-320-toggle').prop('checked', settings.use320ForTranscode);
   $('#j-autoplay-toggle').prop('checked', settings.autoplay);
   $('#j-page-size').val(settings.pageSize);
   $('#j-name-format').val(settings.nameFormat);
-  $('#j-transcode-sr').val(settings.singleSr);
-  $('#j-transcode-br').val(settings.singleBr);
-  $('#j-global-sr').val(settings.globalSr);
-  $('#j-global-br').val(settings.globalBr);
-  $('#j-transcode-ch').val(settings.singleCh);
-  $('#j-global-ch').val(settings.globalCh);
+  $('#j-transcode-fmt').val(settings.fmt);
+  $('#j-transcode-sr').val(settings.sr);
+  $('#j-transcode-br').val(settings.br);
+  $('#j-transcode-ch').val(settings.ch);
+  $('#j-transcode-depth').val(settings.depth);
+  updateFormatUI();
 
+  // 【新增】：注册 Mediabunny 的 MP3 编码器
+  if (typeof MediabunnyMp3Encoder !== 'undefined') {
+      MediabunnyMp3Encoder.registerMp3Encoder();
+  }
+
+  // 绑定设置事件
+  $('#j-transcode-fmt').on('change', function() {
+      settings.fmt = $(this).val();
+      localStorage.setItem('mc_trans_fmt', settings.fmt);
+      updateFormatUI();
+  });
+  $('#j-transcode-sr').on('input change', function() { settings.sr = $(this).val(); localStorage.setItem('mc_trans_sr', settings.sr); });
+  $('#j-transcode-br').on('input change', function() { settings.br = $(this).val(); localStorage.setItem('mc_trans_br', settings.br); });
+  $('#j-transcode-ch').on('change', function() { settings.ch = $(this).val(); localStorage.setItem('mc_trans_ch', settings.ch); });
+  $('#j-transcode-depth').on('change', function() { settings.depth = $(this).val(); localStorage.setItem('mc_trans_depth', settings.depth); });
+
+  var player = null;
+  var playerList = [];
+  var nopic = 'static/img/nopic.jpg';
+  var qName = q('name'), qId = q('id'), qUrl = q('url'), qType = q('type');
+  var siteTitle = document.title;
+
+  // ================== 下载列表管理 ==================
   var downloadList = [];
   if (settings.isPersist) {
       downloadList = JSON.parse(localStorage.getItem('mc_download_list') || '[]');
   }
-
   updateDownloadUI();
 
   function saveListToLocal() {
@@ -81,12 +102,7 @@ $(function() {
 
   function updateDownloadUI() {
       var count = downloadList.length;
-      var $badge = $('#j-fab-badge');
-      if (count > 0) {
-          $badge.text(count).show();
-      } else {
-          $badge.hide();
-      }
+      if (count > 0) $('#j-fab-badge').text(count).show(); else $('#j-fab-badge').hide();
       
       var $ul = $('#j-download-list-ul');
       if (count === 0) {
@@ -94,148 +110,352 @@ $(function() {
           $('#j-download-all-128, #j-download-all-320, #j-transcode-all').hide();
           return;
       }
-      $('#j-download-all-128').show();
-
+      $('#j-download-all-128, #j-transcode-all').show();
+      
       var html = '';
       downloadList.forEach(function(item, idx) {
           var isNetease = item.type === 'netease' && item.url_320;
           html += '<li>' +
-                      '<div class="info">' +
-                          '<b>' + item.title + '</b> - ' + item.author + 
-                          (isNetease ? ' <span style="color:#0e90d2;font-size:12px;">[有320k]</span>' : '') +
-                      '</div>' +
+                      '<div class="info"><b>' + item.title + '</b> - ' + item.author + 
+                          (isNetease ? ' <span style="color:#0e90d2;font-size:12px;">[有320k]</span>' : '') + '</div>' +
                       '<div class="actions">' +
                           '<a href="javascript:;" class="dl-128" data-idx="' + idx + '">128k</a>' +
                           (isNetease ? '<a href="javascript:;" class="dl-320" data-idx="' + idx + '">320k</a>' : '') +
                           '<a href="javascript:;" class="dl-del" data-idx="' + idx + '" style="color:#999;"><i class="am-icon-times"></i></a>' +
-                      '</div>' +
-                  '</li>';
+                      '</div></li>';
       });
       $ul.html(html);
       
-      $('#j-download-all-128').show();
-      $('#j-transcode-all').show();
-
-      if (downloadList.some(function(i){ return i.type === 'netease' && i.url_320; })) {
-          $('#j-download-all-320').show();
-      } else {
-          $('#j-download-all-320').hide();
-      }
+      if (downloadList.some(function(i){ return i.type === 'netease' && i.url_320; })) $('#j-download-all-320').show();
+      else $('#j-download-all-320').hide();
   }
 
-  function generateFileName(item, quality) {
-      var qualityStr = quality || '128';
-      var randomNum = Math.floor(Math.random() * 2147483647);
-      var currentFormat = $('#j-name-format').val() || settings.nameFormat;
-      var fname = currentFormat.replace(/{title}/g, item.title)
-                            .replace(/{author}/g, item.author)
-                            .replace(/{songid}/g, item.songid)
-                            .replace(/{quality}/g, qualityStr)
-                            .replace(/{random}/g, randomNum);
-      fname = fname.replace(/[\\/:*?"<>|]/g, '');
-      return fname || item.title;
+  function generateFileName(item, suffix) {
+      var str = $('#j-name-format').val() || settings.nameFormat;
+      var fname = str.replace(/{title}/g, item.title)
+                     .replace(/{author}/g, item.author)
+                     .replace(/{songid}/g, item.songid)
+                     .replace(/{quality}/g, suffix || '')
+                     .replace(/{random}/g, Math.floor(Math.random() * 2147483647));
+      return fname.replace(/[\\/:*?"<>|]/g, '') || item.title;
   }
 
   function getProxyDownloadUrl(url, filename) {
-      if(!url) return '';
-      if (url.indexOf('data:audio') === 0) return '';
-      return getUrl('download.php') + '?url=' + encodeURIComponent(url) + '&filename=' + encodeURIComponent(filename + '.mp3');
+      if(!url || url.indexOf('data:audio') === 0) return '';
+      return getUrl('download.php') + '?url=' + encodeURIComponent(url) + '&filename=' + encodeURIComponent(filename);
   }
 
-  // ================== 核心：防卡死的 Blob 下载器 ==================
-  function fetchBlob(url, progressCallback) {
+  // ================== 核心底层：下载与编解码 ==================
+  function fetchBlob(url, onProgress) {
       return new Promise(function(resolve, reject) {
           var proxyUrl = getProxyDownloadUrl(url, 'temp');
           var xhr = new XMLHttpRequest();
           xhr.open('GET', proxyUrl, true);
           xhr.responseType = 'blob';
-          xhr.timeout = 15000; // 【关键】15秒强杀，绝不卡死
+          xhr.timeout = 20000;
 
           xhr.onprogress = function(e) {
-              if (progressCallback) {
+              if (onProgress) {
+                  var mb = (e.loaded / 1024 / 1024).toFixed(1);
                   if (e.lengthComputable) {
-                      progressCallback((e.loaded / e.total) * 100);
+                      var percent = (e.loaded / e.total) * 100;
+                      onProgress(percent, mb + 'MB / ' + (e.total/1024/1024).toFixed(1) + 'MB');
                   } else {
-                      progressCallback(Math.min(99, (e.loaded / 1024 / 1024) * 10)); // 兜底假进度
+                      onProgress(Math.min(99, mb * 10), mb + 'MB ...');
                   }
               }
           };
-
-          xhr.onload = function() {
-              if (this.status === 200) {
-                  resolve(this.response);
-              } else {
-                  reject(new Error('拉取失败: ' + this.status));
-              }
-          };
+          xhr.onload = function() { this.status === 200 ? resolve(this.response) : reject(new Error('下载失败')); };
           xhr.onerror = function() { reject(new Error('网络错误')); };
-          xhr.ontimeout = function() { reject(new Error('拉取超时，可能链接已失效')); };
+          xhr.ontimeout = function() { reject(new Error('链接超时')); };
           xhr.send();
       });
   }
 
-  // 封装一个用 Blob 直接触发下载的函数
   function saveBlobAsFile(blob, filename) {
       var blobUrl = window.URL.createObjectURL(blob);
       var a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename;
+      a.href = blobUrl; a.download = filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
   }
 
-  // ================== Mediabunny 转码核心 ==================
-  async function transcodeAudio(sourceUrl, outputFilename, sampleRate, bitrateKbps, channels, callbacks) {
-      var onPullProgress = callbacks && callbacks.onPullProgress;
-      var onTranscodeProgress = callbacks && callbacks.onTranscodeProgress;
+  async function decodeAudioToPCM(blob) {
+      var arrayBuffer = await blob.arrayBuffer();
+      var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      audioCtx.close();
+      return audioBuffer;
+  }
 
-      if (onPullProgress) onPullProgress(0, 0, '准备拉取源文件...');
+  function encodeWAV(audioBuffer, sampleRate, channels, depth, onProgress) {
+      var numChannels = Math.min(channels, audioBuffer.numberOfChannels);
+      var length = audioBuffer.length;
+      var bytesPerSample = 2; 
+      if (depth === 's24le') bytesPerSample = 3;
+      if (depth === 's32le' || depth === 'f32le') bytesPerSample = 4;
+      if (depth === 'u8') bytesPerSample = 1;
+
+      var dataSize = length * numChannels * bytesPerSample;
+      var buffer = new ArrayBuffer(44 + dataSize);
+      var view = new DataView(buffer);
+
+      writeString(view, 0, 'RIFF');
+      view.setUint32(4, 36 + dataSize, true);
+      writeString(view, 8, 'WAVE');
+      writeString(view, 12, 'fmt ');
+      view.setUint32(16, 16, true);
       
-      var sourceBlob;
-      try {
-          sourceBlob = await fetchBlob(sourceUrl, function(percent) {
-              if (onPullProgress) onPullProgress(percent, 0, '拉取中 ' + Math.floor(percent) + '%');
-          });
-      } catch (e) {
-          throw new Error('拉取源文件失败: ' + e.message);
+      var formatCode = (depth === 'f32le') ? 3 : 1; 
+      view.setUint16(20, formatCode, true);
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numChannels * bytesPerSample, true);
+      view.setUint16(32, numChannels * bytesPerSample, true);
+      view.setUint16(34, bytesPerSample * 8, true);
+      writeString(view, 36, 'data');
+      view.setUint32(40, dataSize, true);
+
+      var offset = 44;
+      var channelData = [];
+      for (var i = 0; i < numChannels; i++) channelData.push(audioBuffer.getChannelData(i));
+
+      for (var i = 0; i < length; i++) {
+          for (var c = 0; c < numChannels; c++) {
+              var sample = channelData[c][i];
+              if (depth === 's16le') {
+                  sample = Math.max(-1, Math.min(1, sample));
+                  view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+                  offset += 2;
+              } else if (depth === 's24le') {
+                  sample = Math.max(-1, Math.min(1, sample));
+                  var s24 = Math.floor(sample < 0 ? sample * 0x800000 : sample * 0x7FFFFF);
+                  view.setUint8(offset, s24 & 0xFF);
+                  view.setUint8(offset + 1, (s24 >> 8) & 0xFF);
+                  view.setUint8(offset + 2, (s24 >> 16) & 0xFF);
+                  offset += 3;
+              } else if (depth === 's32le') {
+                  sample = Math.max(-1, Math.min(1, sample));
+                  view.setInt32(offset, sample < 0 ? sample * 0x80000000 : sample * 0x7FFFFFFF, true);
+                  offset += 4;
+              } else if (depth === 'f32le') {
+                  view.setFloat32(offset, sample, true);
+                  offset += 4;
+              } else if (depth === 'u8') {
+                  sample = Math.max(-1, Math.min(1, sample));
+                  view.setUint8(offset, (sample + 1) * 127.5);
+                  offset += 1;
+              }
+          }
+          if (onProgress && i % 4096 === 0) onProgress((i / length) * 100);
       }
+      return new Blob([buffer], { type: 'audio/wav' });
+  }
 
-      if (onPullProgress) onPullProgress(100, 0, '拉取完成，准备转码...');
-      if (onTranscodeProgress) onTranscodeProgress(0, '初始化转码器...');
-      
-      if (!window.Mediabunny) throw new Error('Mediabunny 未加载');
+  function writeString(view, offset, string) {
+      for (var i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+      }
+  }
+
+// ==========================================
+// 辅助函数：将 AudioBuffer 转为 WAV Blob (供 Mediabunny 读取)
+// ==========================================
+function audioBufferToWavBlob(audioBuffer, sampleRate, numChannels, bitDepth) {
+    var length = audioBuffer.length;
+    var bytesPerSample = bitDepth / 8;
+    var dataSize = length * numChannels * bytesPerSample;
+    var buffer = new ArrayBuffer(44 + dataSize);
+    var view = new DataView(buffer);
+
+    function writeString(view, offset, string) {
+        for (var i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * bytesPerSample, true);
+    view.setUint16(32, numChannels * bytesPerSample, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    var offset = 44;
+    var channelData = [];
+    for (var c = 0; c < numChannels; c++) channelData.push(audioBuffer.getChannelData(c));
+
+    var maxVal = (1 << (bitDepth - 1)) - 1;
+    var negMaxVal = (1 << (bitDepth - 1));
+
+    for (var i = 0; i < length; i++) {
+        for (var c = 0; c < numChannels; c++) {
+            var sample = Math.max(-1, Math.min(1, channelData[c][i]));
+            var intSample = Math.floor(sample < 0 ? sample * negMaxVal : sample * maxVal);
+
+            if (bitDepth === 16) {
+                view.setInt16(offset, intSample, true);
+                offset += 2;
+            } else if (bitDepth === 24) {
+                view.setUint8(offset, intSample & 0xFF);
+                view.setUint8(offset + 1, (intSample >> 8) & 0xFF);
+                view.setUint8(offset + 2, (intSample >> 16) & 0xFF);
+                offset += 3;
+            }
+        }
+    }
+    return new Blob([buffer], { type: 'audio/wav' });
+}
+
+// ==========================================
+// 核心函数：使用 Mediabunny 进行 FLAC 编码
+// ==========================================
+async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) {
+    if (typeof Mediabunny === 'undefined') {
+        throw new Error('Mediabunny 未加载');
+    }
+
+    // 检查 FLAC 扩展包是否加载
+    if (typeof MediabunnyFlacEncoder === 'undefined') {
+        throw new Error('FLAC 编码器扩展包 (@mediabunny/flac-encoder) 未加载！请检查 HTML 中是否引入了本地文件。');
+    }
+
+    // 注册 FLAC 编码器（如果尚未注册）
+    MediabunnyFlacEncoder.registerFlacEncoder();
+
+    var numChannels = Math.min(channels, audioBuffer.numberOfChannels);
+    var bitDepth = (depth === 's24le') ? 24 : 16;
+
+    // 1. 将 AudioBuffer 转换为 WAV Blob
+    var wavBlob = audioBufferToWavBlob(audioBuffer, sampleRate, numChannels, bitDepth);
+
+    // 2. 初始化 Mediabunny 转换流程
+    var { Input, Output, Conversion, BlobSource, ALL_FORMATS, FlacOutputFormat, BufferTarget } = Mediabunny;
+
+    var input = new Input({ source: new BlobSource(wavBlob), formats: ALL_FORMATS });
+    var output = new Output({
+        format: new FlacOutputFormat(),
+        target: new BufferTarget()
+    });
+
+    var conversion = await Conversion.init({
+        input,
+        output,
+        audio: {
+            codec: 'flac',
+            sampleRate: sampleRate,
+            numberOfChannels: numChannels,
+            bitDepth: bitDepth
+        }
+    });
+
+    if (!conversion.isValid) {
+        throw new Error('当前环境不支持该配置的 FLAC 编码');
+    }
+
+    // 真实的编码进度回调
+    conversion.onProgress = function(progress) {
+        if (onProgress) onProgress(progress * 100);
+    };
+
+    // 执行编码
+    await conversion.execute();
+
+    return new Blob([output.target.buffer], { type: 'audio/flac' });
+}
+
+  async function transcodeToOpus(sourceUrl, sampleRate, bitrate, channels, onPull, onTrans) {
+      var sourceBlob = await fetchBlob(sourceUrl, onPull);
+      if (onTrans) onTrans(0, '初始化编码器...');
 
       const { Input, Output, Conversion, ALL_FORMATS, BlobSource, OggOutputFormat, BufferTarget } = window.Mediabunny;
-
       const input = new Input({ source: new BlobSource(sourceBlob), formats: ALL_FORMATS });
       const output = new Output({ format: new OggOutputFormat(), target: new BufferTarget() });
-
+      
       var audioConfig = { codec: 'opus', sampleRate: sampleRate, numberOfChannels: parseInt(channels, 10) || 2 };
-
-      if (bitrateKbps > 0) {
-          audioConfig.bitrate = bitrateKbps * 1000;
+      if (bitrate > 0) {
+          audioConfig.bitrate = bitrate * 1000;
           audioConfig.bitrateMode = 'constant';
       } else {
           audioConfig.bitrateMode = 'variable';
       }
 
       const conversion = await Conversion.init({ input, output, audio: audioConfig });
-
-      if (!conversion.isValid) throw new Error('浏览器不支持 Opus 编码或参数不合法');
+      if (!conversion.isValid) throw new Error('不支持 Opus');
 
       conversion.onProgress = function(progress) {
-          if (onTranscodeProgress) onTranscodeProgress(Math.floor(progress * 100), '转码中 ' + (progress * 100).toFixed(1) + '%');
+          if (onTrans) onTrans(Math.floor(progress * 100), '转码中 ' + (progress * 100).toFixed(1) + '%');
       };
-
       await conversion.execute();
 
-      if (onTranscodeProgress) onTranscodeProgress(100, '转码完成，正在保存...');
-
-      const finalBuffer = output.target.buffer;
-      const finalBlob = new Blob([finalBuffer], { type: 'audio/ogg' });
-      saveBlobAsFile(finalBlob, outputFilename + '.ogg');
+      return new Blob([output.target.buffer], { type: 'audio/ogg' });
   }
 
+  // 【新增】：使用 Mediabunny 进行 MP3 (CBR) 编码
+  async function transcodeToMp3(sourceUrl, sampleRate, bitrate, channels, onPull, onTrans) {
+      var sourceBlob = await fetchBlob(sourceUrl, onPull);
+      if (onTrans) onTrans(0, '初始化 MP3 编码器...');
+
+      const { Input, Output, Conversion, ALL_FORMATS, BlobSource, Mp3OutputFormat, BufferTarget } = window.Mediabunny;
+      const input = new Input({ source: new BlobSource(sourceBlob), formats: ALL_FORMATS });
+      const output = new Output({ format: new Mp3OutputFormat(), target: new BufferTarget() });
+      
+      var audioConfig = { 
+          codec: 'mp3', 
+          sampleRate: sampleRate, 
+          numberOfChannels: parseInt(channels, 10) || 2,
+          bitrate: (parseInt(bitrate, 10) || 128) * 1000 // MP3 CBR
+      };
+
+      const conversion = await Conversion.init({ input, output, audio: audioConfig });
+      if (!conversion.isValid) throw new Error('不支持 MP3');
+
+      conversion.onProgress = function(progress) {
+          if (onTrans) onTrans(Math.floor(progress * 100), '转码中 ' + (progress * 100).toFixed(1) + '%');
+      };
+      await conversion.execute();
+
+      return new Blob([output.target.buffer], { type: 'audio/mpeg' });
+  }
+
+  async function processSingle(item, baseName, progressCallbacks) {
+      var sourceUrl = (settings.use320ForTranscode && item.url_320) ? item.url_320 : item.url;
+      var ext = settings.fmt;
+      var finalBlob = null;
+      
+      // 【核心修复】：强制把配置里的字符串转成纯数字，防止底层报错
+      var sampleRate = parseInt(settings.sr, 10) || 48000;
+      var bitrate = parseInt(settings.br, 10) || 0;
+      var channels = parseInt(settings.ch, 10) || 2;
+      
+      if (ext === 'opus') {
+          finalBlob = await transcodeToOpus(sourceUrl, sampleRate, bitrate, channels, progressCallbacks.onPull, progressCallbacks.onTrans);
+      } else if (ext === 'mp3') { // 【新增】：MP3 分支
+          finalBlob = await transcodeToMp3(sourceUrl, sampleRate, bitrate, channels, progressCallbacks.onPull, progressCallbacks.onTrans);
+      } else {
+          var rawBlob = await fetchBlob(sourceUrl, progressCallbacks.onPull);
+          progressCallbacks.onTrans(0, '正在解码 PCM...');
+          var audioBuffer = await decodeAudioToPCM(rawBlob);
+          
+          if (ext === 'wav') {
+              finalBlob = encodeWAV(audioBuffer, sampleRate, channels, settings.depth, function(p) {
+                  progressCallbacks.onTrans(p, '编码 WAV 中 ' + Math.floor(p) + '%');
+              });
+          } else if (ext === 'flac') {
+              finalBlob = await encodeFLAC(audioBuffer, sampleRate, channels, settings.depth, function(p) {
+                  progressCallbacks.onTrans(p, '编码 FLAC 中 ' + Math.floor(p) + '%');
+              });
+          }
+      }
+      saveBlobAsFile(finalBlob, baseName + '.' + ext);
+  }
   function getFresh320Url(item) {
       return new Promise(function(resolve, reject) {
           if(!item.songid) return reject('缺少歌曲 ID');
@@ -263,7 +483,6 @@ $(function() {
   $('#j-panel-close, #j-settings-close').on('click', closeModals);
   $('#j-modal-overlay').on('click', closeModals);
 
-  // ================== 设置项绑定 ==================
   $('#j-name-format').on('input change', function() { settings.nameFormat = $(this).val(); localStorage.setItem('mc_name_format', settings.nameFormat); });
   $('#j-persist-toggle').on('change', function() {
       settings.isPersist = $(this).prop('checked'); localStorage.setItem('mc_persist_list', settings.isPersist);
@@ -273,155 +492,96 @@ $(function() {
   $('#j-use-320-toggle').on('change', function() { settings.use320ForTranscode = $(this).prop('checked'); localStorage.setItem('mc_use_320_transcode', settings.use320ForTranscode); });
   $('#j-autoplay-toggle').on('change', function() { settings.autoplay = $(this).prop('checked'); localStorage.setItem('mc_autoplay', settings.autoplay); });
   $('#j-page-size').on('input change', function() { settings.pageSize = parseInt($(this).val(), 10) || 10; localStorage.setItem('mc_page_size', settings.pageSize); });
-  
-  $('#j-transcode-sr, #j-global-sr').on('input change', function() {
-      settings.singleSr = $('#j-transcode-sr').val(); settings.globalSr = $('#j-global-sr').val();
-      localStorage.setItem('mc_single_sr', settings.singleSr); localStorage.setItem('mc_global_sr', settings.globalSr);
-  });
-  $('#j-transcode-br, #j-global-br').on('input change', function() {
-      settings.singleBr = $('#j-transcode-br').val(); settings.globalBr = $('#j-global-br').val();
-      localStorage.setItem('mc_single_br', settings.singleBr); localStorage.setItem('mc_global_br', settings.globalBr);
-  });
-  $('#j-transcode-ch, #j-global-ch').on('change', function() {
-      settings.singleCh = $('#j-transcode-ch').val(); settings.globalCh = $('#j-global-ch').val();
-      localStorage.setItem('mc_single_ch', settings.singleCh); localStorage.setItem('mc_global_ch', settings.globalCh);
-  });
 
   // ================== 主页单曲转码 ==================
   $('#j-transcode-btn').on('click', function() {
       var currentData = playerList[player.playIndex];
       if (!currentData || !currentData.url) return showToast('请先解析并播放该歌曲');
 
-      var sampleRate = parseInt(settings.singleSr, 10) || 48000;
-      var bitrate = parseInt(settings.singleBr, 10);
-      var channels = settings.singleCh;
-      if (isNaN(bitrate)) bitrate = 128;
-
-      var sourceUrl = (settings.use320ForTranscode && currentData.url_320) ? currentData.url_320 : currentData.url;
-      var qualityStr = (bitrate === 0) ? 'VBR' : bitrate;
-      var baseName = generateFileName(currentData, qualityStr);
+      // 【修改】：后缀生成逻辑增加 MP3
+      var suffix = (settings.fmt === 'opus' || settings.fmt === 'mp3') ? ((settings.br == 0) ? 'VBR' : settings.br + 'k') : settings.sr + 'Hz_' + settings.depth;
+      var baseName = generateFileName(currentData, suffix);
       
       var $btn = $(this).prop('disabled', true);
       $('#j-single-progress').show();
-      $('#j-pull-bar').val(0); $('#j-pull-text').html('正在拉取源文件...'); $('#j-pull-percent').text('0%');
-      $('#j-trans-bar').val(0); $('#j-trans-text').html('等待转码...'); $('#j-trans-percent').text('0%');
+      $('#j-pull-bar').val(0); $('#j-pull-text').html('准备拉取源文件...'); $('#j-pull-percent').text('0%');
+      $('#j-trans-bar').val(0); $('#j-trans-text').html('等待处理...'); $('#j-trans-percent').text('0%');
 
-      transcodeAudio(sourceUrl, baseName, sampleRate, bitrate, channels, {
-          onPullProgress: function(percent, loaded, text) {
-              $('#j-pull-bar').val(percent); $('#j-pull-text').html(text); $('#j-pull-percent').text(Math.floor(percent) + '%');
+      processSingle(currentData, baseName, {
+          onPull: function(percent, text) {
+              $('#j-pull-bar').val(percent); $('#j-pull-text').html('拉取: ' + text); $('#j-pull-percent').text(Math.floor(percent) + '%');
           },
-          onTranscodeProgress: function(percent, text) {
+          onTrans: function(percent, text) {
               $('#j-trans-bar').val(percent); $('#j-trans-text').html(text); $('#j-trans-percent').text(Math.floor(percent) + '%');
           }
-      })
-      .then(function() {
-          showToast('转码下载完成！');
+      }).then(function() {
+          showToast('导出成功！');
           setTimeout(function() { $('#j-single-progress').fadeOut(); $btn.prop('disabled', false); }, 1500);
-      })
-      .catch(function(err) {
-          showToast('转码失败: ' + err.message);
+      }).catch(function(err) {
+          showToast('失败: ' + err.message);
           $('#j-single-progress').fadeOut(); $btn.prop('disabled', false);
       });
   });
 
   $('#j-add-to-list').on('click', function() {
-      var currentData = playerList[player.playIndex];
-      if(!currentData || !currentData.url) return showToast('请先解析并播放该歌曲');
-      if (downloadList.some(function(i){ return i.songid === currentData.songid; })) return showToast('这首歌已经在列表里啦！');
-      
-      downloadList.push({ songid: currentData.songid, title: currentData.title, author: currentData.author, type: currentData.type, url: currentData.url, url_320: currentData.url_320 || '', lrc: currentData.lrc });
+      var data = playerList[player.playIndex];
+      if(!data || !data.url) return showToast('请先解析并播放该歌曲');
+      if (downloadList.some(function(i){ return i.songid === data.songid; })) return showToast('已在列表中');
+      downloadList.push({ songid: data.songid, title: data.title, author: data.author, type: data.type, url: data.url, url_320: data.url_320 || '', lrc: data.lrc });
       updateDownloadUI(); saveListToLocal(); showToast('已加入下载列表！');
   });
 
   $(document).on('click', '.dl-del', function() {
-      var idx = $(this).data('idx'); downloadList.splice(idx, 1); updateDownloadUI(); saveListToLocal();
+      downloadList.splice($(this).data('idx'), 1); updateDownloadUI(); saveListToLocal();
   });
 
-  // 单曲直接下载 (128k)
   $(document).on('click', '.dl-128', function() {
       var item = downloadList[$(this).data('idx')];
       var filename = generateFileName(item, '128');
-      $('#j-download-progress').show().text('正在下载: ' + item.title);
-
-      fetchBlob(item.url, function(percent) {
-          $('#j-download-progress').text('下载中 ' + Math.floor(percent) + '%');
-      }).then(function(blob) {
-          saveBlobAsFile(blob, filename + '.mp3');
-          $('#j-download-progress').text('下载完成！');
-          setTimeout(function() { $('#j-download-progress').fadeOut(); }, 1500);
-      }).catch(function(err) {
-          showToast(err.message); $('#j-download-progress').fadeOut();
-      });
+      $('#j-download-progress').show().text('下载中...');
+      fetchBlob(item.url, function(p, txt) { $('#j-download-progress').text('下载中 ' + Math.floor(p) + '% (' + txt + ')'); })
+      .then(function(blob) { saveBlobAsFile(blob, filename + '.mp3'); $('#j-download-progress').text('完成！'); setTimeout(function(){ $('#j-download-progress').fadeOut(); }, 1500); })
+      .catch(function(err){ showToast(err.message); $('#j-download-progress').fadeOut(); });
   });
 
-  // 单曲直接下载 (320k)
   $(document).on('click', '.dl-320', function() {
       var item = downloadList[$(this).data('idx')];
-      $('#j-download-progress').show().text('正在获取单曲 320k 链接...');
-      
+      $('#j-download-progress').show().text('获取最新 320k 链接...');
       getFresh320Url(item).then(function(url) {
-          var filename = generateFileName(item, '320');
-          $('#j-download-progress').text('正在下载: ' + item.title);
-          return fetchBlob(url, function(percent) {
-              $('#j-download-progress').text('下载中 ' + Math.floor(percent) + '%');
-          }).then(function(blob) {
-              saveBlobAsFile(blob, filename + '.mp3');
-          });
-      }).then(function() {
-          $('#j-download-progress').text('下载完成！');
-          setTimeout(function() { $('#j-download-progress').fadeOut(); }, 1500);
-      }).catch(function(err) {
-          showToast(err); $('#j-download-progress').fadeOut();
-      });
+          $('#j-download-progress').text('下载中...');
+          return fetchBlob(url, function(p, txt) { $('#j-download-progress').text('下载中 ' + Math.floor(p) + '% (' + txt + ')'); })
+          .then(function(blob) { saveBlobAsFile(blob, generateFileName(item, '320') + '.mp3'); $('#j-download-progress').text('完成！'); setTimeout(function(){ $('#j-download-progress').fadeOut(); }, 1500); });
+      }).catch(function(err){ showToast(err); $('#j-download-progress').fadeOut(); });
   });
 
   // ================== 批量转码 ==================
   $('#j-transcode-all').on('click', function() {
       if (downloadList.length === 0) return;
-      var sampleRate = parseInt(settings.globalSr, 10) || 48000;
-      var bitrate = parseInt(settings.globalBr, 10);
-      var channels = settings.globalCh;
-      if (isNaN(bitrate)) bitrate = 128;
-
       var total = downloadList.length; var current = 0;
       var $progress = $('#j-download-progress'); var $btn = $(this);
 
-      $btn.prop('disabled', true).text('转码队列执行中...');
+      $btn.prop('disabled', true).text('处理队列执行中...');
       $progress.show().text('准备中...');
 
       function processNext() {
           if (current >= total) {
-              $progress.text('全部转码完成！');
+              $progress.text('全部处理完成！');
               setTimeout(function() { $progress.fadeOut(); }, 2000);
-              $btn.prop('disabled', false).html('<i class="am-icon-cogs"></i> 批量转码为 Ogg');
+              $btn.prop('disabled', false).html('<i class="am-icon-cogs"></i> 批量转码列表中所有');
               return;
           }
 
           var item = downloadList[current];
-          var qualityStr = (bitrate === 0) ? 'VBR' : bitrate;
-          var filename = generateFileName(item, qualityStr);
+          // 【修改】：批量后缀逻辑增加 MP3
+          var suffix = (settings.fmt === 'opus' || settings.fmt === 'mp3') ? ((settings.br == 0) ? 'VBR' : settings.br + 'k') : settings.sr + 'Hz_' + settings.depth;
+          var filename = generateFileName(item, suffix);
           $progress.text('[' + (current + 1) + '/' + total + '] 准备处理: ' + item.title);
 
-          var progressCallbacks = {
-              onPullProgress: function(percent, loaded, text) { $progress.text('[' + (current + 1) + '/' + total + '] ' + text); },
-              onTranscodeProgress: function(percent, text) { $progress.text('[' + (current + 1) + '/' + total + '] ' + text); }
-          };
-
-          if (settings.use320ForTranscode && item.type === 'netease') {
-              $progress.text('[' + (current + 1) + '/' + total + '] 正在获取最新 320k 链接...');
-              getFresh320Url(item).then(function(freshUrl) {
-                  return transcodeAudio(freshUrl, filename, sampleRate, bitrate, channels, progressCallbacks);
-              }).then(function() { current++; processNext(); })
-              .catch(function(err) {
-                  transcodeAudio(item.url, filename, sampleRate, bitrate, channels, progressCallbacks)
-                      .then(function() { current++; processNext(); })
-                      .catch(function(e) { current++; processNext(); });
-              });
-          } else {
-              transcodeAudio(item.url, filename, sampleRate, bitrate, channels, progressCallbacks)
-                  .then(function() { current++; processNext(); })
-                  .catch(function(err) { current++; processNext(); });
-          }
+          processSingle(item, filename, {
+              onPull: function(p, txt) { $progress.text('[' + (current + 1) + '/' + total + '] ' + txt); },
+              onTrans: function(p, txt) { $progress.text('[' + (current + 1) + '/' + total + '] ' + txt); }
+          }).then(function() { current++; processNext(); })
+          .catch(function(err) { console.error(item.title, err); current++; processNext(); });
       }
       processNext();
   });
@@ -438,7 +598,7 @@ $(function() {
 
       function processNext() {
           if (current >= total) {
-              $progress.text('批量下载已全部完成！');
+              $progress.text('批量下载完成！');
               setTimeout(function() { $progress.fadeOut(); }, 2000);
               $btn128.prop('disabled', false); $btn320.prop('disabled', false);
               return;
@@ -449,17 +609,15 @@ $(function() {
           $progress.text('[' + (current + 1) + '/' + total + '] 正在下载: ' + item.title);
 
           var doDownload = function(url) {
-              return fetchBlob(url, function(percent) {
-                  $progress.text('[' + (current + 1) + '/' + total + '] 下载中 ' + Math.floor(percent) + '%');
-              }).then(function(blob) {
-                  saveBlobAsFile(blob, baseName + '.mp3');
-              });
+              return fetchBlob(url, function(p, txt) {
+                  $progress.text('[' + (current + 1) + '/' + total + '] ' + Math.floor(p) + '% (' + txt + ')');
+              }).then(function(blob) { saveBlobAsFile(blob, baseName + '.mp3'); });
           };
 
           if (type === '320') {
-              getFresh320Url(item).then(function(freshUrl) { return doDownload(freshUrl); })
+              getFresh320Url(item).then(function(url) { return doDownload(url); })
               .then(function() { current++; processNext(); })
-              .catch(function(err) { current++; processNext(); });
+              .catch(function() { current++; processNext(); });
           } else {
               doDownload(item.url).then(function() { current++; processNext(); });
           }
@@ -470,7 +628,7 @@ $(function() {
   $('#j-download-all-128').on('click', function() { batchDownload('128'); });
   $('#j-download-all-320').on('click', function() { batchDownload('320'); });
 
-  // ================== 搜素逻辑保持不变 ==================
+  // ================== 清理列表 ==================
   var clearPending = false; var clearTimer = null;
   $('#j-clear-list').on('click', function() {
       if (!clearPending) {
@@ -486,6 +644,7 @@ $(function() {
       }
   });
 
+  // ================== 搜索与播放逻辑 (完全保留) ==================
   if ((qName || qId) && qType) {
     setTimeout(function() {
       $('#j-input').val(qName || qId); $('#j-type input[value="' + qType + '"]').prop('checked', true);
