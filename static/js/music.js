@@ -586,7 +586,8 @@ async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) 
       processNext();
   });
 
-    function batchDownload(type) {
+  // ================== 批量直接下载 ==================
+  function batchDownload(type) {
       if (downloadList.length === 0) return;
       var total = downloadList.length; var current = 0;
       var $progress = $('#j-download-progress');
@@ -605,51 +606,20 @@ async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) 
 
           var item = downloadList[current];
           var baseName = generateFileName(item, type);
-          
-          // 【核心修复】：如果没有 320k，直接跳过并显示提示
-          if (type === '320' && !item.url_320) {
-              $progress.text('[' + (current + 1) + '/' + total + '] 跳过: ' + item.title + ' (无 320k 版权)');
-              current++;
-              setTimeout(processNext, 800); // 停 0.8 秒，让用户看清提示
-              return;
-          }
-
           $progress.text('[' + (current + 1) + '/' + total + '] 正在下载: ' + item.title);
 
           var doDownload = function(url) {
               return fetchBlob(url, function(p, txt) {
                   $progress.text('[' + (current + 1) + '/' + total + '] ' + Math.floor(p) + '% (' + txt + ')');
-              }).then(function(blob) { 
-                  // 【防呆校验】：防止底层返回空文件覆盖
-                  if (blob && blob.size > 1000) {
-                      saveBlobAsFile(blob, baseName + '.mp3'); 
-                  } else {
-                      throw new Error('文件为空');
-                  }
-              });
+              }).then(function(blob) { saveBlobAsFile(blob, baseName + '.mp3'); });
           };
 
           if (type === '320') {
-              // 必须请求最新链接，防止链接过期
               getFresh320Url(item).then(function(url) { return doDownload(url); })
-              .then(function() { 
-                  current++; 
-                  setTimeout(processNext, 1000); // 【关键】：每个文件下载后间隔 1 秒，防止浏览器拦截
-              })
-              .catch(function(err) { 
-                  $progress.text('[' + (current + 1) + '/' + total + '] 失败: ' + item.title + ' (' + (err.message || err) + ')');
-                  current++; 
-                  setTimeout(processNext, 1000); 
-              });
+              .then(function() { current++; processNext(); })
+              .catch(function() { current++; processNext(); });
           } else {
-              doDownload(item.url).then(function() { 
-                  current++; 
-                  setTimeout(processNext, 1000); 
-              }).catch(function(err) {
-                  $progress.text('[' + (current + 1) + '/' + total + '] 失败: ' + item.title + ' (' + (err.message || err) + ')');
-                  current++; 
-                  setTimeout(processNext, 1000); 
-              });
+              doDownload(item.url).then(function() { current++; processNext(); });
           }
       }
       processNext();

@@ -114,7 +114,7 @@ if exist "%NPX_CMD%" (
     cd /d "%NODE_DIR%"
     
     :: 静默执行一次，触发下载缓存
-    call "%NPX_CMD%" -y NeteaseCloudMusicApi@4.33.0 --help >nul 2>&1
+    call "%NPX_CMD%" -y @neteasecloudmusicapienhanced/api@4.41.1 --help >nul 2>&1
     
     if %errorLevel% equ 0 (
         echo     [OK] NeteaseCloudMusicApi downloaded successfully.

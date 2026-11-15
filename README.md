@@ -18,12 +18,12 @@
 
 ## 运行依赖
 
-由于网易云官方旧版接口变动，网易云模块（`core/site/netease.php`）目前接入了 `NeteaseCloudMusicApi` 作为数据源。
+由于网易云官方旧版接口变动，网易云模块（`core/site/netease.php`）目前接入了 `@neteasecloudmusicapienhanced/api@4.41.1` 作为数据源。
 
 请在运行 PHP 服务前，安装 [Node.js](https://nodejs.org/)，并在命令行中启动本地 API 服务（保持窗口不关闭）：
 
 ```bash
-npx NeteaseCloudMusicApi@latest
+npx @neteasecloudmusicapienhanced/api@4.41.1
 ```
 
 ## 功能说明
@@ -66,7 +66,7 @@ npx NeteaseCloudMusicApi@latest
 2. 版权限制，外站无法获取
 3. 服务器 IP 所在地不在源站允许的区域
 4. 音乐下架了，链接被去除
-5. [网易云] 本地 NeteaseCloudMusicApi 服务未启动或崩溃
+5. [网易云] 本地 @neteasecloudmusicapienhanced/api@4.41.1 服务未启动或崩溃
 
 *音乐链接不为空*
 
