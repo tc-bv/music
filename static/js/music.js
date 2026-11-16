@@ -700,7 +700,7 @@ async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) 
 
                 player.on('play', function() {
                   var data = playerList[player.playIndex]; if(!data.url) return;
-                  var img = new Image(); img.src = data.pic; iimg.onerror = function() { 
+                  var img = new Image(); img.src = data.pic; img.onerror = function() { 
                       var randomCover = getRandomVinyl();
                       $('.aplayer-pic').css('background-image', 'url(' + randomCover + ')'); 
                   };
