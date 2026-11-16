@@ -79,7 +79,12 @@ $(function() {
   var nopic = 'static/img/nopic.jpg';
   var qName = q('name'), qId = q('id'), qUrl = q('url'), qType = q('type');
   var siteTitle = document.title;
-
+function getRandomVinyl() {
+      // 生成 1 到 10 的随机数
+      var randomIndex = Math.floor(Math.random() * 10) + 1;
+      return 'static/img/vinyl' + randomIndex + '.jpg'; 
+      // 如果你下载的是 png，记得把 .jpg 改成 .png
+  }
   // ================== 下载列表管理 ==================
   var downloadList = [];
   if (settings.isPersist) { downloadList = JSON.parse(localStorage.getItem('mc_download_list') || '[]'); }
@@ -616,7 +621,10 @@ async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) 
               if (result.code === 200 && result.data) {
                 result.data.map(function(v) {
                   if (!v.title) v.title = '暂无'; if (!v.author) v.author = '暂无';
-                  if (!v.pic) v.pic = nopic; if (!v.lrc) v.lrc = '[00:00.00] 暂无歌词';
+                  if (!v.pic || v.pic === nopic || v.pic.indexOf('nopic') > -1) {
+                      v.pic = getRandomVinyl();
+                  }
+ if (!v.lrc) v.lrc = '[00:00.00] 暂无歌词';
                   if (!/\[00:(\d{2})\./.test(v.lrc)) v.lrc = '[00:00.00] 无效歌词';
                 });
                 
@@ -692,7 +700,10 @@ async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) 
 
                 player.on('play', function() {
                   var data = playerList[player.playIndex]; if(!data.url) return;
-                  var img = new Image(); img.src = data.pic; img.onerror = function() { $('.aplayer-pic').css('background-image', 'url(' + nopic + ')'); };
+                  var img = new Image(); img.src = data.pic; iimg.onerror = function() { 
+                      var randomCover = getRandomVinyl();
+                      $('.aplayer-pic').css('background-image', 'url(' + randomCover + ')'); 
+                  };
                   document.title = '正在播放: ' + data.title + ' - ' + data.author; setValue(data);
                 });
                 player.on('ended', function() { document.title = siteTitle; });
