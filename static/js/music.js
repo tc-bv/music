@@ -79,6 +79,7 @@ $(function() {
   var nopic = 'static/img/nopic.jpg';
   var qName = q('name'), qId = q('id'), qUrl = q('url'), qType = q('type');
   var siteTitle = document.title;
+
 function getRandomVinyl() {
       // 生成 1 到 10 的随机数
       var randomIndex = Math.floor(Math.random() * 10) + 1;
@@ -137,13 +138,15 @@ function getRandomVinyl() {
       return getUrl('download.php') + '?url=' + encodeURIComponent(url) + '&filename=' + encodeURIComponent(filename);
   }
 
-  function fetchBlob(url, onProgress) {
+    // 核心底层：下载并支持自动重试
+  function fetchBlob(url, onProgress, retryCount) {
+      retryCount = retryCount || 0;
       return new Promise(function(resolve, reject) {
           var proxyUrl = getProxyDownloadUrl(url, 'temp');
           var xhr = new XMLHttpRequest();
           xhr.open('GET', proxyUrl, true);
           xhr.responseType = 'blob';
-          xhr.timeout = 20000;
+          xhr.timeout = 30000;
 
           xhr.onprogress = function(e) {
               if (onProgress) {
@@ -156,15 +159,47 @@ function getRandomVinyl() {
                   }
               }
           };
+          
           xhr.onload = function() { 
-              if (this.status === 200 && this.response.size > 10240) {
-                  resolve(this.response);
+              if (this.status === 200) {
+                  var size = this.response.size;
+                  // 【精准拦截】：小于 150KB 判定为异常文件
+                  if (size < 153600) { 
+                      if (retryCount < 3) {
+                          console.log('文件过小 (' + size + ' 字节)，正在重试第 ' + (retryCount + 1) + ' 次...');
+                          setTimeout(function() {
+                              fetchBlob(url, onProgress, retryCount + 1).then(resolve).catch(reject);
+                          }, 500);
+                      } else {
+                          reject(new Error('文件异常：体积过小，可能受版权限制或网络错误'));
+                      }
+                  } else {
+                      resolve(this.response);
+                  }
               } else {
-                  reject(new Error('文件为空或下载失败')); 
+                  if (retryCount < 3) {
+                      setTimeout(function() { fetchBlob(url, onProgress, retryCount + 1).then(resolve).catch(reject); }, 500);
+                  } else {
+                      reject(new Error('网络请求失败 (状态码: ' + this.status + ')')); 
+                  }
               }
           };
-          xhr.onerror = function() { reject(new Error('网络错误')); };
-          xhr.ontimeout = function() { reject(new Error('链接超时')); };
+          
+          xhr.onerror = function() { 
+              if (retryCount < 3) {
+                  setTimeout(function() { fetchBlob(url, onProgress, retryCount + 1).then(resolve).catch(reject); }, 500);
+              } else {
+                  reject(new Error('网络错误')); 
+              }
+          };
+          
+          xhr.ontimeout = function() { 
+              if (retryCount < 3) {
+                  setTimeout(function() { fetchBlob(url, onProgress, retryCount + 1).then(resolve).catch(reject); }, 500);
+              } else {
+                  reject(new Error('链接超时')); 
+              }
+          };
           xhr.send();
       });
   }
@@ -379,7 +414,8 @@ async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) 
       saveBlobAsFile(finalBlob, baseName + '.' + ext);
   }
 
-  function getFresh320Url(item) {
+    function getFresh320Url(item, retryCount) {
+      retryCount = retryCount || 0;
       return new Promise(function(resolve, reject) {
           if(!item.songid) return reject('缺少歌曲 ID');
           $.ajax({
@@ -388,10 +424,34 @@ async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) 
               dataType: 'json',
               success: function(res) {
                   if (res.code === 200 && res.data && res.data.length > 0 && res.data[0].url_320) {
-                      resolve(res.data[0].url_320);
-                  } else { reject('暂无 320k 版权'); }
+                      var link = res.data[0].url_320;
+                      
+                      // 【核心修复】：如果链接包含 try 标识，判定为试听残次品，自动重试
+                      if (link.indexOf('try') > -1 || link.indexOf('freeTrial') > -1) {
+                          if (retryCount < 2) {
+                              setTimeout(function() { getFresh320Url(item, retryCount + 1).then(resolve).catch(reject); }, 500);
+                          } else {
+                              reject('该歌曲为 VIP 专属，暂无完整 320k 链接');
+                          }
+                      } else {
+                          resolve(link);
+                      }
+                  } else {
+                      // 没拿到链接，重试
+                      if (retryCount < 2) {
+                          setTimeout(function() { getFresh320Url(item, retryCount + 1).then(resolve).catch(reject); }, 500);
+                      } else {
+                          reject('暂无 320k 版权');
+                      }
+                  }
               },
-              error: function() { reject('获取 320k 失败'); }
+              error: function() { 
+                  if (retryCount < 2) {
+                      setTimeout(function() { getFresh320Url(item, retryCount + 1).then(resolve).catch(reject); }, 500);
+                  } else {
+                      reject('获取 320k 失败'); 
+                  }
+              }
           });
       });
   }
@@ -721,7 +781,7 @@ async function encodeFLAC(audioBuffer, sampleRate, channels, depth, onProgress) 
               } else { $more.text('(°ー°〃) 加载失败了，点击重试'); }
             },
             complete: function complete() {
-              isload = false; if (page === 1) { $('#j-input').attr('disabled', false); $('#j-submit').button('reset'); }
+              isload = false; if (page === 1) { $('#j-input').attr('disabled', false); $('#j-submit').button('reset').removeAttr('disabled');}
             }
           });
         };
